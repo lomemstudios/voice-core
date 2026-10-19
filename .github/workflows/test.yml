@@ -1,0 +1,21 @@
+name: test
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - name: Third-party AARs (pinned by SHA-256)
+        run: tools/fetch_deps.sh
+      - name: Public tree check
+        run: tools/check_public.sh
+      - name: Unit tests and both AARs
+        run: ./gradlew --console=plain test assembleRelease
