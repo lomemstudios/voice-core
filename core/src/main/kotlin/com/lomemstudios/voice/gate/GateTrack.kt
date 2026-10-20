@@ -27,6 +27,8 @@ class GateConfig {
     /** ...and has gone on for this long: the first buffers of the user's own voice after a pause come before their
      *  readings (which lag the audio by a buffer or two), and must not end the turn as if another voice talked. */
     var leftOutRun = 0.15
+    /** Changed words count toward a turn only while the track is open. */
+    var wordsRule = true
     /** Only sound this far above the speech margin is left out with the track closed: another voice at speech level.
      *  Quieter sound (a breath, the room, the tail of the user's own words) counts as without the gate. */
     var leaveOutAboveDB = 8f

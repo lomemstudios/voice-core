@@ -74,7 +74,9 @@ and the decisions taken.
   (`lastSound`) while it is open or when it is no more than 8 dB over the speech margin (`leaveOutAboveDB`: a breath,
   the room, a word's tail), and is left out otherwise. While left-out sound goes on (heard in the last 0.2 s, for at
   least 0.15 s) the turn ends after `heldOffSilence` (1.0 s) without counted sound, `endedBy = "gate"`; once it stops,
-  the silence counts from the last sound of any voice, as without the gate. A turn whose track never opened, or whose
+  the silence counts from the last sound of any voice, as without the gate. A turn the gate shortened, by its
+  silence or by words that changed with the track closed, ends with `endedBy = "gate"` and its audio runs to its last
+  sound of any voice: pVAD can miss the user's own last words (0.00 over them on the ferry). A turn whose track never opened, or whose
   readings lag the audio by more than `GateConfig.maxLag` (250 ms), runs as without the gate. The settings came from
   the mixture replay (`MixtureReplayTest`, claude-voice PROGRESS.md "1.9"): the plan's 300 ms hang and 0.75 s close
   split 14 of 48 of Petros's turns in a quiet room, because pVAD misses about 13% of his frames.

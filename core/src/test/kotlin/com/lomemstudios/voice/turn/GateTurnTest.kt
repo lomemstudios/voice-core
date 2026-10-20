@@ -91,7 +91,7 @@ class GateTurnTest {
         assertEquals("gate", on.first!!.endedBy)
         assertTrue(on.first!!.gate!!.endedByGate)
         assertTrue("ended ${on.firstEndAt!! - stop} s after the user stopped", on.firstEndAt!! - stop <= 1.6)
-        assertTrue("cut at the track's close, ${first.end}", first.end >= stop && first.end <= stop + 0.45)
+        assertTrue("its audio runs to the last sound, ${first.end}", first.end >= on.firstEndAt!! - 0.25)
 
         val off = GateTimeline(false)
         off.user(1.5); off.say("check the build"); off.other(4.0)
@@ -104,7 +104,7 @@ class GateTurnTest {
         on.stuck = true
         on.user(1.5); on.say("check the build"); val stop = on.t
         on.otherTalking(6.0, "check the build")
-        assertEquals("words still", on.first?.endedBy)
+        assertEquals("gate", on.first?.endedBy)
         assertTrue("ended ${on.firstEndAt!! - stop} s after the user's last word", on.firstEndAt!! - stop <= 2.3)
     }
 

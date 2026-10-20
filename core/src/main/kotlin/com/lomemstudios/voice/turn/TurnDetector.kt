@@ -100,6 +100,8 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
     private var lastHeard = 0.0
     /** Where the current run of sound left out by the gate began. */
     private var leftOutFrom = 0.0
+    /** Words changed with the track closed in the open turn, and did not count. */
+    private var wordsHeldOff = false
     /** Speech-level seconds since the gate started, and those with the reading under GateConfig.otherBelow: the app
      *  takes their change over each uploaded chunk as the chunk's `other` share (Phase 2). */
     var speechTotal = 0.0
@@ -194,7 +196,12 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         if (inTurn && t - turnStart >= config.maxTurn - 1e-9) return events + endTurn(t, "", "cap", wordsEnd())
         if (inTurn && text.isNotEmpty() && t - textChangedAt >= wordsStill(text) - 1e-9) {
             // The recognizer has had its words unchanged for seconds, far past the 400 ms that counts as caught up,
-            // so nothing waits for caughtUp here.
+            // so nothing waits for caughtUp here. Words that changed with the track closed did not count: then the
+            // gate ended it, and its audio runs to the last sound, as a shortened turn's does.
+            if (gated() && wordsHeldOff) {
+                stats.gate?.endedByGate = true
+                return events + endTurn(t, "", "gate", lastHeard)
+            }
             return events + endTurn(t, "", "words still", wordsEnd())
         }
         return events
@@ -217,7 +224,7 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         text = trimmed
         // Words that change with the track closed are another voice's, or late words of the user's own: they do
         // not keep the turn open.
-        if (!gated() || gate!!.open) textChangedAt = t
+        if (!gated() || gate!!.open || !gate!!.config.wordsRule) textChangedAt = t else wordsHeldOff = true
         if (playing && !bargedIn && Words.cutsIn(text, config.bargeInWords)) {
             bargedIn = true
             events += TurnEvent.BargeIn(text, t)
@@ -295,6 +302,7 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             gate = gate?.let { GateStats(threshold = it.config.threshold) })
         gateOpenedInTurn = gate?.open == true
         soundHeldOff = false
+        wordsHeldOff = false
         lastHeard = t
         inTurn = true
         between.clear()
@@ -318,8 +326,10 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         if (!(silence >= needed && (caught || silence >= needed + config.catchUpTimeout))) return emptyList()
         // The silence was there only because the gate left another voice's sound out.
         if (shortened) {
+            // Its audio runs to the last sound of any voice, not to the track's close: pVAD can miss the user's own
+            // last words (the ferry, 18 October 05:20: p 0.00 over them), and Azure hears what was cut.
             stats.gate?.endedByGate = true
-            return endTurn(t, "", "gate")
+            return endTurn(t, "", "gate", lastHeard)
         }
         return endTurn(t, "")
     }
