@@ -46,7 +46,19 @@ object ModelManifest {
         sha256 = "e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534", bytes = 535_638,
         licence = "MIT", source = "$SHERPA/speech-enhancement-models/gtcrn_simple.onnx")
 
-    val ALL: List<ModelSpec> = listOf(TITANET_SMALL, PVAD, GTCRN)
+    /** SpeechBrain ECAPA (spkrec-ecapa-voxceleb at revision 0f99f2d0ebe89ac095bcc5903c4dd8f72b367286) with its Fbank
+     *  front end and mean normalisation, exported by tools/export_ecapa.py (torch 2.7.1 CPU, speechbrain 1.1.2, onnx
+     *  1.23.2, opset 17): the 192-d vector pVAD was trained on (plan step 1.2). fp32: the int8 copy missed parity
+     *  (cosine 0.955 on some speech, against at least 0.9999999998 for this one on 58 files). Fetched on demand at
+     *  enrolment and deleted after it. */
+    val ECAPA_SB = ModelSpec(
+        name = "ecapa_sb", use = "voice print for the voice gate (SpeechBrain ECAPA)", file = "ecapa_sb.onnx",
+        sha256 = "04b8df18dbb48061bc04d8d12a2b93345be1d13f31c708ff59eeecd86e8ccde8", bytes = 84_128_540,
+        licence = "Apache-2.0 (SpeechBrain weights; trained on VoxCeleb, CC BY 4.0 per its site)",
+        source = "https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb/tree/0f99f2d0ebe89ac095bcc5903c4dd8f72b367286 " +
+            "exported by tools/export_ecapa.py")
+
+    val ALL: List<ModelSpec> = listOf(TITANET_SMALL, PVAD, GTCRN, ECAPA_SB)
 
     fun byName(name: String): ModelSpec? = ALL.firstOrNull { it.name == name }
 }

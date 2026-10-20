@@ -15,6 +15,21 @@ class GateConfig {
     var maxLag = 0.25
     /** Speech-level audio with a reading below this counts as another voice (`other_s`, Phase 2's trigger). */
     var otherBelow = 0.3f
+    /** The silence that ends a turn the gate shortened (sound with the track closed was left out): longer than the
+     *  base silence, because pVAD misses the user's own voice now and then (13% of his frames in a quiet room). Chosen
+     *  by the mixture replay (claude-voice PROGRESS.md, "1.9"): 1.0 s, with [leaveOutAboveDB] 8 dB, cut 2 of 48 of
+     *  his turns in a quiet room where 0.7 s and 0 dB cut 14. */
+    var heldOffSilence = 1.0
+    /** The gate ends a turn only while the sound it leaves out goes on (heard this recently): another voice still
+     *  talking. Once that sound stops, the silence counts from the last sound of any voice, as without the gate, so a
+     *  pause of the user's own whose end pVAD missed does not cut the turn. */
+    var ongoing = 0.2
+    /** ...and has gone on for this long: the first buffers of the user's own voice after a pause come before their
+     *  readings (which lag the audio by a buffer or two), and must not end the turn as if another voice talked. */
+    var leftOutRun = 0.15
+    /** Only sound this far above the speech margin is left out with the track closed: another voice at speech level.
+     *  Quieter sound (a breath, the room, the tail of the user's own words) counts as without the gate. */
+    var leaveOutAboveDB = 8f
 }
 
 class GateTrack(val config: GateConfig = GateConfig()) {

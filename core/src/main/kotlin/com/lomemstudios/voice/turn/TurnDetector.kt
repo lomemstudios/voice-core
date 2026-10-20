@@ -96,6 +96,10 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
     private var gateOpenedInTurn = false
     /** Sound with the track closed was left out of the open turn since its last counted sound. */
     private var soundHeldOff = false
+    /** The last loud buffer of any voice, counted or left out by the gate (lastSound without the gate). */
+    private var lastHeard = 0.0
+    /** Where the current run of sound left out by the gate began. */
+    private var leftOutFrom = 0.0
     /** Speech-level seconds since the gate started, and those with the reading under GateConfig.otherBelow: the app
      *  takes their change over each uploaded chunk as the chunk's `other` share (Phase 2). */
     var speechTotal = 0.0
@@ -159,12 +163,15 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             if (!inTurn && since != null && t - since >= config.minSpeech) events += start(since, "sound")
             countSpeech(duration)
             if (inTurn) {
+                val heardBefore = lastHeard
+                lastHeard = t
                 // Another voice no longer holds the turn: with the track closed its sound does not count.
-                if (!gated() || gate!!.open) {
+                if (!gated() || gate!!.open || levelDB <= noiseFloorDB + marginDB + gate!!.config.leaveOutAboveDB) {
                     lastSound = t
                     flushed = false
                     soundHeldOff = false
                 } else {
+                    if (!soundHeldOff || t - heardBefore > duration + 1e-9) leftOutFrom = t - duration
                     soundHeldOff = true
                 }
             }
@@ -288,6 +295,7 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             gate = gate?.let { GateStats(threshold = it.config.threshold) })
         gateOpenedInTurn = gate?.open == true
         soundHeldOff = false
+        lastHeard = t
         inTurn = true
         between.clear()
         turnStart = t
@@ -300,12 +308,16 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
     }
 
     private fun checkEnd(t: Double): List<TurnEvent> {
-        val silence = t - lastSound
-        val needed = requiredSilence(text)
+        // While the sound the gate leaves out goes on, the silence counts from the last counted sound; once it stops,
+        // from the last sound of any voice, as without the gate.
+        val shortened = gated() && soundHeldOff && t - lastHeard <= gate!!.config.ongoing + 1e-9 &&
+            lastHeard - leftOutFrom >= gate!!.config.leftOutRun - 1e-9
+        val silence = if (shortened || !gated()) t - lastSound else t - maxOf(lastSound, lastHeard)
+        val needed = if (shortened) maxOf(requiredSilence(text), gate!!.config.heldOffSilence) else requiredSilence(text)
         val caught = heardThrough >= lastSound
         if (!(silence >= needed && (caught || silence >= needed + config.catchUpTimeout))) return emptyList()
         // The silence was there only because the gate left another voice's sound out.
-        if (gated() && soundHeldOff) {
+        if (shortened) {
             stats.gate?.endedByGate = true
             return endTurn(t, "", "gate")
         }

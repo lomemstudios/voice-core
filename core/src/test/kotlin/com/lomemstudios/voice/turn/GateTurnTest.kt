@@ -3,6 +3,7 @@
 
 package com.lomemstudios.voice.turn
 
+import com.lomemstudios.voice.gate.GateConfig
 import com.lomemstudios.voice.gate.GateTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -14,9 +15,9 @@ import kotlin.random.Random
  * detector [readingDelay] buffers after it, as they come from the pVAD thread; the recognizer finishes [lag] after a
  * flush, because one that answers at once hides timing bugs.
  */
-class GateTimeline(withGate: Boolean, configure: TurnConfig.() -> Unit = {}) {
+class GateTimeline(withGate: Boolean, gateConfig: GateConfig.() -> Unit = {}, configure: TurnConfig.() -> Unit = {}) {
     val detector = TurnDetector(TurnConfig().apply(configure))
-    val track = if (withGate) GateTrack().also { detector.gate = it } else null
+    val track = if (withGate) GateTrack(GateConfig().apply(gateConfig)).also { detector.gate = it } else null
     var t = 0.0
     val events = mutableListOf<Pair<Double, TurnEvent>>()
     var lag = 0.3
@@ -36,6 +37,8 @@ class GateTimeline(withGate: Boolean, configure: TurnConfig.() -> Unit = {}) {
 
     fun user(seconds: Double) = run(seconds, -20f, 0.9f)
     fun other(seconds: Double) = run(seconds, -20f, 0.05f)
+    /** Sound just over the speech margin that pVAD does not take for the user: a breath, the room, a word's tail. */
+    fun murmur(seconds: Double) = run(seconds, -44f, 0.05f)
     fun quiet(seconds: Double) = run(seconds, -60f, 0.02f)
     fun say(text: String) { detector.words(text, t).forEach { events += t to it } }
     /** The first turn's numbers, kept when it ended: another voice talking on starts a turn of its own. */
@@ -87,7 +90,7 @@ class GateTurnTest {
         assertEquals("check the build", first.text)
         assertEquals("gate", on.first!!.endedBy)
         assertTrue(on.first!!.gate!!.endedByGate)
-        assertTrue("ended ${on.firstEndAt!! - stop} s after the user stopped", on.firstEndAt!! - stop <= 1.3)
+        assertTrue("ended ${on.firstEndAt!! - stop} s after the user stopped", on.firstEndAt!! - stop <= 1.6)
         assertTrue("cut at the track's close, ${first.end}", first.end >= stop && first.end <= stop + 0.45)
 
         val off = GateTimeline(false)
@@ -97,7 +100,7 @@ class GateTurnTest {
 
     @Test fun wordsThatChangeWithTheTrackClosedDoNotKeepTheTurn() {
         // A recognizer that never catches up, so only the words end the turn.
-        val on = GateTimeline(true) { catchUpTimeout = 30.0 }
+        val on = GateTimeline(true, configure = { catchUpTimeout = 30.0 })
         on.stuck = true
         on.user(1.5); on.say("check the build"); val stop = on.t
         on.otherTalking(6.0, "check the build")
@@ -148,6 +151,34 @@ class GateTurnTest {
         off.user(1.5); off.say("check the build"); off.quiet(2.0)
         assertEquals(off.firstEndAt, on.firstEndAt)
         assertEquals("silence", on.first!!.endedBy)
+    }
+
+    @Test fun aTurnTheGateShortensWaitsLongerThanTheBaseSilence() {
+        val on = GateTimeline(true)
+        on.user(1.5); on.say("check the build"); val stop = on.t
+        on.other(4.0)
+        // The track closes 0.3 s after the user, and a shortened turn then needs 1.0 s, not the base 0.7 s.
+        assertTrue("ended ${on.firstEndAt!! - stop} s after the user stopped", on.firstEndAt!! - stop >= 1.3)
+    }
+
+    @Test fun quietSoundWithTheTrackClosedStillCounts() {
+        // Just over the speech margin, under it plus 8 dB: as without the gate, the words end this turn, not the gate.
+        fun script(tl: GateTimeline) { tl.user(1.5); tl.say("check the build"); tl.murmur(4.0); tl.quiet(2.0) }
+        val on = GateTimeline(true).also(::script)
+        val off = GateTimeline(false).also(::script)
+        assertEquals(off.firstEndAt, on.firstEndAt)
+        assertEquals("words still", on.first?.endedBy)
+    }
+
+    @Test fun aPauseAfterTheLeftOutSoundStopsCountsFromTheLastSound() {
+        // Another voice for half a second, then a pause shorter than the base silence, then the user goes on: one
+        // turn. With the shortened turn's silence at 0.7 s it would have ended inside the pause.
+        fun script(tl: GateTimeline) {
+            tl.user(1.5); tl.say("check the build"); tl.other(0.5); tl.quiet(0.6)
+            tl.user(0.5); tl.say("check the build and the"); tl.user(0.5); tl.say("check the build and the tests"); tl.quiet(2.0)
+        }
+        val on = GateTimeline(true, gateConfig = { heldOffSilence = 0.7 }).also(::script)
+        assertEquals(listOf("check the build and the tests"), on.ended.map { it.text })
     }
 
     @Test fun withTheGateNoTurnEndsLater() {

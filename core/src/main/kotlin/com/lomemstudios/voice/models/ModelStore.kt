@@ -95,14 +95,26 @@ class ModelStore(
     /** An on-demand model's file, fetched first when it is not there; a download that does not match is deleted and
      *  throws [ModelMismatch]. */
     @Synchronized
-    fun fetch(spec: ModelSpec): File {
+    fun fetch(spec: ModelSpec, progress: (Long) -> Unit = {}): File {
         val source = source(spec) as? ModelSource.OnDemand ?: throw IOException("${spec.name} is not fetched on demand")
         val f = fetched(spec)
         if (f.exists() && f.inputStream().use { sha256(it) } == spec.sha256) return f
         dir.mkdirs()
         val part = File(dir, f.name + ".part")
         try {
-            download(source.url).use { input -> part.outputStream().use { input.copyTo(it) } }
+            download(source.url).use { input ->
+                part.outputStream().use { out ->
+                    val buf = ByteArray(1 shl 16)
+                    var total = 0L
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        total += n
+                        progress(total)
+                    }
+                }
+            }
             val sha = part.inputStream().use { sha256(it) }
             if (sha != spec.sha256) throw ModelMismatch(spec, sha)
             if (!part.renameTo(f)) throw IOException("${spec.name}: could not move the download into place")
