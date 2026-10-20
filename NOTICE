@@ -12,10 +12,9 @@ tools/fetch_deps.sh fetches it, pinned by SHA-256, and a release zip carries it 
   org.json 20260814 (tests only)                                             Public Domain
   JUnit 4.13.2 (tests only)                                                  Eclipse Public License 1.0
 
-Models are not in this repository or its releases. The app that uses the sherpa module bundles them in its own
-assets, under their own licences:
+Models are not in this repository or its releases. The app bundles them in its own assets, or fetches them on demand
+(ModelStore), under their own licences:
 
-  Keyword spotter: sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01      Apache 2.0
   Speaker model: NVIDIA NeMo TitaNet small, as released by sherpa-onnx       CC BY 4.0 for TitaNet on Hugging Face; to
                                                                              confirm for the small model on NVIDIA NGC
                                                                              before a store release
@@ -23,3 +22,11 @@ assets, under their own licences:
                                                                              speaker vectors come from SpeechBrain
                                                                              spkrec-ecapa-voxceleb, Apache 2.0
   Speech denoiser: GTCRN (Xiaobin Rong), as converted by sherpa-onnx         MIT
+  Voice print for the voice gate: SpeechBrain spkrec-ecapa-voxceleb         Apache 2.0 (the weights; trained on
+  (revision 0f99f2d0), exported with its front end by tools/export_ecapa.py   VoxCeleb, CC BY 4.0 per its site)
+
+FireRedChat pVAD's NOTICE, as its authors ship it:
+
+  pvad.onnx: FireRedChat personalized VAD model
+  speaker embedding weight: speechbrain/spkrec-ecapa-voxceleb (https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb)
+  (license: "apache-2.0")
