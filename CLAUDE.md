@@ -13,7 +13,8 @@ and the decisions taken.
 - Never in this repository, its history or a release: a recording of Petros's voice (the ferry recordings, enrolment
   samples, saved turns, the mixtures), a token or key, a tailnet address or a home path, a REAL-TSE checkpoint, its code,
   its weights, its URL or its fetch script. REAL-TSE stays Petros's own, on main, outside every repository.
-- Models are not committed either: the app bundles them, or (from plan step 0.5) `ModelStore` fetches them by SHA-256.
+- Models are not committed either: the app bundles them, or `ModelStore` fetches them on demand; either way each is
+  pinned by SHA-256 in `models/ModelManifest.kt` and checked before use.
 - `tools/check_public.sh` fails on any of these in the tracked tree. Run it before every commit that adds files; CI runs it.
 - Tests that need recordings read them from `VOICE_BENCH_DIR` (on main `~/.local/state/voice-bench`, outside every
   repository) and skip when it is unset or missing. Voice Next's `FerryAudioTest`, which plays the ferry recordings
@@ -21,7 +22,7 @@ and the decisions taken.
 
 ## What each module owns
 
-- `core` (`com.lomemstudios.voice`, plain Kotlin on Android, no model runtime):
+- `core` (`com.lomemstudios.voice`, Kotlin on Android, with ONNX Runtime for Android 1.22.0 for pVAD):
   - `turn`: `TurnDetector`, `TurnConfig`, `TurnEvent`, `TurnStats`, `Words`. When a turn starts and ends, from levels
     and the recognizer's words.
   - `print`: `VoicePrint` (the print over any `Embedder`, in the folder the app gives), `SpeakerCheck` (a turn's and a
@@ -30,14 +31,30 @@ and the decisions taken.
   - `call`: `CallRoute` (which communication device a session uses; never the earpiece), `EchoMeter` (how far over the
     floor an answer came back while it played).
   - `engines`: `KeywordSpotting`, `EngineFactory`, and `NoEngines` for a build without a model runtime.
+  - `models`: `ModelManifest` (every model, pinned: name, SHA-256, size, licence, source) and `ModelStore` (bundled
+    or on-demand; a bundled model is hashed once per app build, a mismatch is never used, a bad download deleted).
+  - `profile`: `VoiceProfileStore` (`<filesDir>/voice/profile`: kept enrolment samples as WAV, one print per model
+    version, swapped in whole, delete-all, migration of the old `print.bin`); `VoicePrint` keeps its print through a
+    `PrintStore` (the profile, or `PrintFile`, the old single file).
+  - `engine`: `VoiceEngine` (the microphone, the call path and the frame fan-out; see below), `audio`: `FrameFanOut`,
+    `call`: `RouteSteps` and `CallPlayer` (what plays is call audio on the call path).
+  - `pvad`: `Pvad`, FireRedChat pVAD on ONNX Runtime, one stream per microphone, its state carried between steps.
+  - `bench`: `PhoneBench` (the phone speed test: pVAD paced as Phase 1 runs it, then flat out, and any `BenchPart`),
+    `SyntheticAudio` (deterministic, equal to the Python reference sample for sample), `StepStats`, `Device`.
 - `sherpa` (`com.lomemstudios.voice.sherpa`): `SherpaEngines.factory(context, keywordsFile, log, models)` on sherpa-onnx
   1.13.8: TitaNet small as the `Embedder`, the zipformer keyword spotter. The keyword list and the model files are the
-  app's own assets; `SherpaModels` names their paths (defaults are where Voice Next bundles them).
+  app's own assets; `SherpaModels` names their paths (defaults are where Voice Next bundles them). `SherpaBench` gives
+  the speed test's TitaNet and GTCRN parts.
+- An app with both modules has two ONNX Runtimes in one process (core's, and the one linked into sherpa-onnx's JNI
+  library); they ran side by side in the speed test on main's x86-64 emulator. sherpa-onnx's AAR also ships
+  `lib/x86/libonnxruntime.so`, so the app needs `packaging.jniLibs.pickFirsts += "lib/x86/libonnxruntime.so"`.
 - Stays in each app: screens, sounds, the server protocol, the command words and their thresholds (Voice Next's
-  `SpeakerGate`), and until plan step 0.7 the microphone, the call-audio mode switch and playback (Voice Next's
-  `VoiceService`).
-- From 0.7, `VoiceEngine` in `core` owns the microphone and call-path audio, and an app never opens `AudioRecord` or
-  switches the audio mode itself. Until then that rule is not in force: Voice Next's `VoiceService` still does both.
+  `SpeakerGate`), the turn detector's host and the recognizer (until plan step 1.18), and the players, which take
+  their usage from `VoiceEngine.playUsage()`.
+- `VoiceEngine` in `core` owns the microphone and call-path audio (since 0.2.0, plan step 0.7): an app never opens
+  `AudioRecord` or switches the audio mode itself. It reads 50 ms frames on its "audio" thread, gives each to every
+  tap (its own thread and bounded queue; a slow tap drops its own frames) and, with its level, to the listener on the
+  main thread.
 
 ## The detector is the reference
 
@@ -77,8 +94,9 @@ the line and the words; until `EnrolmentSession` (plan step 1.11) the app enforc
 - `tools/release.sh` builds `build/release/voice-core-<version>-maven.zip` and prints its SHA-256: a Maven repository
   with `core`, `sherpa`, the third-party AARs (`com.lomemstudios.voice.deps`), LICENSE and NOTICE. The same tree gives
   the same zip. Nothing is uploaded by it.
-- Publishing is Petros's step, never Claude's without his go: create the GitHub repository, push `main`, tag, then
-  `gh release create v<version> build/release/voice-core-<version>-maven.zip`.
+- Publishing is Petros's step, never Claude's without his go: push `main`, tag, then
+  `gh release create v<version> build/release/voice-core-<version>-maven.zip`. The repository is
+  github.com/lomemstudios/voice-core (public); v0.1.0 is released.
 - Each consumer pins one version and its SHA-256, and upgrading is a commit there. Voice Next: `voiceCoreVersion` in
   `android/app/build.gradle.kts`, and `voice_core_version`, `voice_core_repo` and `voice_core_sha256` in
   `android/tools/fetch_voiceprint.sh`. lomem: `packages/voice-native` (Phase 4).

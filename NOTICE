@@ -8,6 +8,8 @@ tools/fetch_deps.sh fetches it, pinned by SHA-256, and a release zip carries it 
 
   sherpa-onnx 1.13.8 (k2-fsa), the Android AAR, in the sherpa module        Apache 2.0
   ONNX Runtime, linked into the sherpa-onnx AAR (Microsoft)                  MIT
+  ONNX Runtime for Android 1.22.0 (Microsoft), from Maven Central, in core   MIT
+  org.json 20260814 (tests only)                                             Public Domain
   JUnit 4.13.2 (tests only)                                                  Eclipse Public License 1.0
 
 Models are not in this repository or its releases. The app that uses the sherpa module bundles them in its own
@@ -17,3 +19,7 @@ assets, under their own licences:
   Speaker model: NVIDIA NeMo TitaNet small, as released by sherpa-onnx       CC BY 4.0 for TitaNet on Hugging Face; to
                                                                              confirm for the small model on NVIDIA NGC
                                                                              before a store release
+  Personal voice activity: FireRedChat pVAD (FireRedTeam), int8 ONNX       Apache 2.0 (model card and NOTICE); its
+                                                                             speaker vectors come from SpeechBrain
+                                                                             spkrec-ecapa-voxceleb, Apache 2.0
+  Speech denoiser: GTCRN (Xiaobin Rong), as converted by sherpa-onnx         MIT

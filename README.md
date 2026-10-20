@@ -11,11 +11,11 @@ Android only. Web is out of scope and iOS is deferred.
 
 | Module | Maven coordinates | Holds | Depends on |
 |---|---|---|---|
-| `core` | `com.lomemstudios.voice:core` | `turn` (TurnDetector, TurnConfig, TurnEvent, TurnStats, Words), `print` (VoicePrint, Embedder, SpeakerCheck), `enrol` (EnrolmentGuide), `call` (CallRoute, EchoMeter), `engines` (KeywordSpotting, EngineFactory, NoEngines) | Kotlin stdlib |
-| `sherpa` | `com.lomemstudios.voice:sherpa` | `SherpaEngines`: TitaNet small as the voice print's Embedder and a zipformer keyword spotter | `core`, sherpa-onnx 1.13.8 |
+| `core` | `com.lomemstudios.voice:core` | `turn` (TurnDetector, TurnConfig, TurnEvent, TurnStats, Words), `print` (VoicePrint, Embedder, SpeakerCheck, PrintStore), `profile` (VoiceProfileStore), `models` (ModelManifest, ModelStore), `engine` (VoiceEngine), `audio` (FrameFanOut), `enrol` (EnrolmentGuide), `call` (CallRoute, EchoMeter, RouteSteps, CallPlayer), `engines` (KeywordSpotting, EngineFactory, NoEngines), `pvad` (Pvad), `bench` (PhoneBench, SyntheticAudio, StepStats) | Kotlin stdlib, ONNX Runtime for Android 1.22.0 |
+| `sherpa` | `com.lomemstudios.voice:sherpa` | `SherpaEngines`: TitaNet small as the voice print's Embedder and a zipformer keyword spotter; `SherpaBench` | `core`, sherpa-onnx 1.13.8 |
 
-`core` is plain Kotlin logic with unit tests. `sherpa` runs the models; the app bundles the model files in its own
-assets.
+`core` holds the logic, with unit tests, the microphone and call path (`VoiceEngine`) and the pVAD runner. `sherpa`
+runs the sherpa-onnx models. The app bundles the model files in its own assets; `ModelManifest` pins each one.
 
 ## Build and test
 

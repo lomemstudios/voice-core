@@ -56,3 +56,34 @@ What moved from claude-voice's `android/app` (code unchanged; packages and comme
   `tools/release.sh`, `gh release create`, and pin `voice_core_repo` and `voice_core_sha256` in claude-voice's
   `fetch_voiceprint.sh`. Until then Voice Next builds only with `VOICE_CORE_DIR` (or a zip installed with
   `VOICE_CORE_ZIP`), and the Mac needs a clone of this repository from main.
+
+## Done on 20 October 2026: 0.5 to 0.7 and the phone bench, for 0.2.0 (not released)
+
+| Step | State | Evidence |
+|---|---|---|
+| 0.5 `ModelStore` | done | `ModelStoreTest` 7 tests; with the SHA-256 check taken out of `bytes()` (and, separately, of `fetch()`) one test fails each time, and passes with it back. Voice Next lists each model's licence in Settings → About and logs `models: … ok` at start |
+| 0.6 `VoiceProfileStore` | done | `VoiceProfileStoreTest` 5 tests: swap, a swap cut between its renames, delete-all, migration of `print.bin`, no audio kept by `PrintFile`; without `recover()`, and with the old `print.bin` kept after a new enrolment, one test fails each time. On main's emulator a pushed `print.bin` migrated at start and Delete my voice left only `voice/models` |
+| 0.7 `VoiceEngine` | built; the field check waits for Petros | `EngineLogicTest` 8 tests (`RouteSteps`, `CallPlayer`, `FrameFanOut`; a blocking offer fails the slow-tap test). On the emulator a session logged its route, effects and the microphone check as before. Still to do: one drive or walk, and its trace compared with the last (turn counts, drops, `echo:` lines) |
+
+Phone bench (`bench/PhoneBench`, Voice Next's Settings → Tools → Phone speed test):
+
+- It lives here, not in the app: it times `Pvad`, the runner the voice gate will use (plan 1.7), on the thread layout
+  Phase 1 will use, so the numbers are the gate's own; any app of this library can run it; it holds no data of
+  anyone's (generated audio, a fixed random embedding). The app adds only its screen and where the lines go.
+- `SyntheticAudio` equals a Python reference sample for sample (`BenchTest` pins its first samples and RMS). pVAD's
+  mean p over the 60 s clip is 0.1389 with onnxruntime 1.22.0 in Python on main and 0.1389 in the bench on main's
+  x86-64 emulator, so the Kotlin runner feeds the model as the research did.
+- On the emulator (4 x86-64 cores of the 5950X): pVAD paced, per 10 ms step mean 1.23 ms, p95 2.23, worst 6.61; per
+  50 ms chunk p95 11.3 ms; flat out 0.92 ms a step (RTF 0.092); TitaNet small 8.8 ms per 1 s window; GTCRN 2.3 ms
+  per 50 ms chunk. The phone's numbers come from Petros's run.
+
+ONNX Runtime: `com.microsoft.onnxruntime:onnxruntime-android:1.22.0` (MIT), AAR SHA-256
+`04a4617a9c797cf49225595e45b5546081cb34c86ac817581141577d3b7dbfe2`. Its arm64 library is 18.2 MB; 1.24.1's is 25.8 MB
+and 1.31.0's (the newest) 34.2 MB, for no gain pVAD needs. It runs beside the ONNX Runtime linked into sherpa-onnx in
+one process (the emulator run above). sherpa-onnx's AAR also carries `lib/x86/libonnxruntime.so`, which clashes at
+packaging: the app picks one (`pickFirsts`).
+
+What 0.2.0 would carry, against 0.1.0: `models`, `profile`, `engine`, `audio`, `pvad`, `bench`; `call.RouteSteps` and
+`CallPlayer`; `VoicePrint(PrintStore, …)` beside the old constructor, `add(kind, pcm, text)`, `reload()`, and `save()`
+false when the store could not write; `levelDb` public; `core` depends on onnxruntime-android 1.22.0; `SherpaBench`.
+Model changes: pVAD and GTCRN pinned in the manifest. Voice Next 0.21 builds against this checkout (`VOICE_CORE_DIR`).

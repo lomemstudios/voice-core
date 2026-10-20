@@ -1,5 +1,6 @@
-// core: plain Kotlin logic on Android, with no model runtime. The turn detector, the voice print over any
-// Embedder, the enrolment guide, the call-audio route and the echo meter.
+// core: the turn detector, the voice print over any Embedder, the voice profile and model store, the enrolment
+// guide, the voice engine (microphone, call-audio route, echo meter, frame fan-out), and the pVAD runner with the
+// phone bench on ONNX Runtime for Android (plan "pVAD needs its own ONNX Runtime on Android").
 plugins {
     id("com.android.library")
     `maven-publish`
@@ -20,7 +21,12 @@ android {
 }
 
 dependencies {
+    // MIT. Version chosen 20 October 2026: 18.2 MB of arm64 native library, against 25.8 MB for 1.24.1 and 34.2 MB
+    // for 1.31.0, the newest; it runs pVAD (PROGRESS.md, "ONNX Runtime").
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.22.0")
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for the JVM tests: Android's is a stub there.
+    testImplementation("org.json:json:20260814")
 }
 
 publishing {
