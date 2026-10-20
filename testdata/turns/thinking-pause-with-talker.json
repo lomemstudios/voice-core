@@ -1,0 +1,6 @@
+{
+  "about": "The user stops on a word that expects more while someone else talks: the gate keeps the longer silence such a word earns (2 s), and still ends the turn before the talker would have held it.",
+  "steps": [{"user": 1.5}, {"say": "check the build and"}, {"other": 5.0}],
+  "gate": {"text": "check the build and", "endedBy": "gate", "endsAfter": 2.0, "endsWithin": 2.7},
+  "noGate": {"text": "check the build and", "endedBy": "words still", "endsAfter": 2.9}
+}

@@ -9,8 +9,16 @@
 // Sound alone cannot end a turn in noise: a squeak above the margin every 50 ms keeps it open. So a turn with words
 // also ends when its words have not changed for wordsStill (longer after a word that expects more), whatever the
 // level, and no turn stays open past maxTurn.
+//
+// With the voice gate (plan Phase 1) the detector also reads the target voice's track (target, GateTrack). Once the
+// track has opened in a turn, sound and changed words count toward that turn only while the track is open, so another
+// voice no longer holds it open; a turn whose track never opened, or whose readings fall behind, runs as without the
+// gate. The gate can only end a turn sooner, never hold one open.
 
 package com.lomemstudios.voice.turn
+
+import com.lomemstudios.voice.gate.GateStats
+import com.lomemstudios.voice.gate.GateTrack
 
 class TurnConfig {
     /** Silence that ends a turn whose words look finished. */
@@ -77,6 +85,24 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
     /** Set by the caller while an answer is playing. */
     var playing = false
 
+    /** The target voice's track while the voice gate runs; null without it (no print, no model, or fallen back). */
+    var gate: GateTrack? = null
+        set(value) {
+            field = value
+            gateOpenedInTurn = value?.open == true
+            if (value == null && inTurn) stats.gate?.let { if (it.fallback.isEmpty()) it.fallback = "gate off" }
+        }
+    /** The track opened during the open turn, so the gate decides it. */
+    private var gateOpenedInTurn = false
+    /** Sound with the track closed was left out of the open turn since its last counted sound. */
+    private var soundHeldOff = false
+    /** Speech-level seconds since the gate started, and those with the reading under GateConfig.otherBelow: the app
+     *  takes their change over each uploaded chunk as the chunk's `other` share (Phase 2). */
+    var speechTotal = 0.0
+        private set
+    var otherTotal = 0.0
+        private set
+
     var noiseFloorDB = -60f
         private set
     private var inTurn = false
@@ -125,14 +151,22 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         } else {
             soft = false
         }
+        if (inTurn && gated() && t - gate!!.readThrough > gate!!.config.maxLag) fallBack("lag")
         if (levelDB > noiseFloorDB + marginDB) {
             soundSinceEnd = true
             if (loudSince == null) loudSince = t - duration
             val since = loudSince
             if (!inTurn && since != null && t - since >= config.minSpeech) events += start(since, "sound")
+            countSpeech(duration)
             if (inTurn) {
-                lastSound = t
-                flushed = false
+                // Another voice no longer holds the turn: with the track closed its sound does not count.
+                if (!gated() || gate!!.open) {
+                    lastSound = t
+                    flushed = false
+                    soundHeldOff = false
+                } else {
+                    soundHeldOff = true
+                }
             }
         } else {
             loudSince = null
@@ -174,12 +208,49 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             events += start(from, "words")
         }
         text = trimmed
-        textChangedAt = t
+        // Words that change with the track closed are another voice's, or late words of the user's own: they do
+        // not keep the turn open.
+        if (!gated() || gate!!.open) textChangedAt = t
         if (playing && !bargedIn && Words.cutsIn(text, config.bargeInWords)) {
             bargedIn = true
             events += TurnEvent.BargeIn(text, t)
         }
         return events
+    }
+
+    /**
+     * One reading of the target voice's track: pVAD's probability for the 10 ms of audio ending at [t], on the audio
+     * clock. Nothing without [gate]. The reading itself never ends a turn: it decides what the next buffers count.
+     */
+    fun target(p: Float, t: Double) {
+        val g = gate ?: return
+        val step = if (g.readThrough.isFinite()) (t - g.readThrough).coerceIn(0.0, 0.05) else 0.0
+        g.reading(p, t)
+        if (!inTurn || !g.open) return
+        val s = stats.gate ?: return
+        if (s.fallback == "lag") return
+        gateOpenedInTurn = true
+        s.openS += step
+    }
+
+    /** The voice gate decides the open turn: it runs, its track opened in this turn, and it has not fallen back. */
+    private fun gated(): Boolean = gate != null && gateOpenedInTurn && stats.gate?.fallback?.isEmpty() == true
+
+    /** The open turn runs as without the gate from now, for [why]. */
+    private fun fallBack(why: String) {
+        stats.gate?.fallback = why
+        soundHeldOff = false
+    }
+
+    private fun countSpeech(duration: Double) {
+        val g = gate ?: return
+        speechTotal += duration
+        val other = g.p < g.config.otherBelow
+        if (other) otherTotal += duration
+        val s = stats.gate ?: return
+        if (!inTurn) return
+        s.speechS += duration
+        if (other) s.otherS += duration
     }
 
     /** The recognizer has delivered every word for the audio up to [through]. */
@@ -213,7 +284,10 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
 
     private fun start(t: Double, by: String): List<TurnEvent> {
         stats = TurnStats(startedBy = by, floorDB = noiseFloorDB, marginDB = marginDB,
-            startLevelsDB = recent.toList().takeLast(6), peakDB = recent.lastOrNull() ?: -200f)
+            startLevelsDB = recent.toList().takeLast(6), peakDB = recent.lastOrNull() ?: -200f,
+            gate = gate?.let { GateStats(threshold = it.config.threshold) })
+        gateOpenedInTurn = gate?.open == true
+        soundHeldOff = false
         inTurn = true
         between.clear()
         turnStart = t
@@ -230,6 +304,11 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         val needed = requiredSilence(text)
         val caught = heardThrough >= lastSound
         if (!(silence >= needed && (caught || silence >= needed + config.catchUpTimeout))) return emptyList()
+        // The silence was there only because the gate left another voice's sound out.
+        if (gated() && soundHeldOff) {
+            stats.gate?.endedByGate = true
+            return endTurn(t, "", "gate")
+        }
         return endTurn(t, "")
     }
 
@@ -243,6 +322,9 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         text = ""
         stats.lengthS = t - turnStart
         stats.silenceS = silence
+        stats.gate?.let { if (!gateOpenedInTurn && it.fallback.isEmpty()) it.fallback = "never opened" }
+        gateOpenedInTurn = false
+        soundHeldOff = false
         if (why.isNotEmpty()) {
             stats.endedBy = why
             return listOf(TurnEvent.Dropped(said, t, why))
@@ -311,6 +393,8 @@ data class TurnStats(
     var lengthS: Double = 0.0,
     var silenceS: Double = 0.0,
     var endedBy: String = "",
+    /** The voice gate's numbers for this turn; null when the gate was not running at its start. */
+    val gate: GateStats? = null,
 )
 
 /** Word lists and the judgements built on them. */

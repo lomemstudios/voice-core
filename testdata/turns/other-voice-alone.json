@@ -1,0 +1,6 @@
+{
+  "about": "Only another voice talks: the track never opens, and the turn runs exactly as without the gate (the 'Ends turns' mode starts turns as before).",
+  "steps": [{"other": 0.6}, {"say": "turn"}, {"other": 0.6}, {"say": "turn the radio"}, {"other": 0.6}, {"say": "turn the radio up"}, {"quiet": 2.0}],
+  "gate": {"text": "turn the radio up", "endedBy": "silence", "fallback": "never opened"},
+  "noGate": {"text": "turn the radio up", "endedBy": "silence"}
+}

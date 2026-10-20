@@ -1,0 +1,6 @@
+{
+  "about": "In a quiet room the silence ends the turn, the same with and without the gate.",
+  "steps": [{"user": 1.5}, {"say": "check the build"}, {"quiet": 2.0}],
+  "gate": {"text": "check the build", "endedBy": "silence", "endsWithin": 1.1},
+  "noGate": {"text": "check the build", "endedBy": "silence", "endsWithin": 1.1}
+}

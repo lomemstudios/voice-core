@@ -1,0 +1,6 @@
+{
+  "about": "Another voice talks on after the user stops: with the gate the user's turn ends about a second after their last word, cut at the track's close; without it the talker holds it until the words are still.",
+  "steps": [{"user": 1.5}, {"say": "check the build"}, {"other": 4.0}],
+  "gate": {"text": "check the build", "endedBy": "gate", "endsWithin": 1.3},
+  "noGate": {"text": "check the build", "endedBy": "words still", "endsAfter": 1.9}
+}

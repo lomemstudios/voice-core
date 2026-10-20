@@ -41,6 +41,12 @@ and the decisions taken.
   - `engine`: `VoiceEngine` (the microphone, the call path and the frame fan-out; see below), `audio`: `FrameFanOut`,
     `call`: `RouteSteps` and `CallPlayer` (what plays is call audio on the call path).
   - `pvad`: `Pvad`, FireRedChat pVAD on ONNX Runtime, one stream per microphone, its state carried between steps.
+    `PvadScorer` is that stream as the gate's `TargetScorer`.
+  - `gate` (plan Phase 1): `GateTrack` (open at p >= threshold, 0.7 by default, held 300 ms after the last such
+    reading), `GateStats` (a turn's `phone.gate` numbers), `GateHealth` (off after 5 accepted turns without the track),
+    `GatePolicy` (whether the gate may run: mode, model, print, the speed test's p95 <= 15 ms a chunk, SCO), and
+    `PvadGate` (the "pvad" thread: frames in with their audio time, readings out; a full queue drops, a throw or a p95
+    over 15 ms in a perf line stops it for the session; `gate: lag`, `gate: fallback`, perf lines every 60 s).
   - `bench`: `PhoneBench` (the phone speed test: pVAD paced as Phase 1 runs it, then flat out, and any `BenchPart`),
     `SyntheticAudio` (deterministic, equal to the Python reference sample for sample), `StepStats`, `Device`.
 - `sherpa` (`com.lomemstudios.voice.sherpa`): `SherpaEngines.factory(context, log, models)` on sherpa-onnx 1.13.8:
@@ -58,6 +64,16 @@ and the decisions taken.
   main thread.
 
 ## The detector is the reference
+
+- The voice gate never holds a turn open; it may only end one sooner, and every failure falls back to the detector
+  without it. `TurnDetector.gate` takes the track and `target(p, t)` its readings on the audio clock. Once the track
+  has opened in a turn, a loud buffer counts (`lastSound`) and changed words count (`textChangedAt`) only while it is
+  open; a turn whose track never opened, or whose readings lag the audio by more than `GateConfig.maxLag` (250 ms),
+  runs as without the gate. The plan's "ends after 0.75 s closed" is the silence path once loud buffers are gated
+  (base silence 0.7 s from the close; 2 s after a word that expects more); a turn so shortened ends with
+  `endedBy = "gate"`. `GateTurnTest` checks each rule fails when removed and that with the gate no turn ends later
+  (300 random scenarios); `TurnScenarioTest` runs `testdata/turns/*.json` with and without the gate. Swift `TurnCore`
+  does not have the gate yet (plan step 1.6, on the Mac).
 
 - `turn/TurnDetector.kt` is the reference turn detector. Claude Voice's Swift `TurnCore` (claude-voice,
   `listener/Sources/TurnCore`) is ported line for line from it: a change here goes there too, checked with
