@@ -34,6 +34,9 @@ class PhoneBench(
     }
 
     @Volatile var cancelled = false
+    /** pVAD's p95 per 50 ms chunk in the paced run, once it ran: the voice gate stays off over 15 ms (GatePolicy). */
+    @Volatile var chunkP95Ms: Double? = null
+        private set
 
     fun say(line: String) = log(PREFIX + line)
 
@@ -109,7 +112,9 @@ class PhoneBench(
         }
         val sec = n * Pvad.STEP / SyntheticAudio.RATE.toDouble()
         say("pvad paced, %d steps of 160 samples (%.0f s, real time): per step %s".format(n, sec, steps.summary(sec).line()))
-        say("pvad paced, per 50 ms chunk of 5 steps: %s; %d chunks over their 50 ms".format(chunks.summary(sec).line(), late))
+        val perChunk = chunks.summary(sec)
+        if (!cancelled) chunkP95Ms = perChunk.p95Ms
+        say("pvad paced, per 50 ms chunk of 5 steps: %s; %d chunks over their 50 ms".format(perChunk.line(), late))
         say("pvad paced, ${cpu.line()}")
         say("pvad p mean %.4f over the clip (reference %.4f, onnxruntime 1.22.0 on x86-64)".format(pSum / n, referencePMean))
     }

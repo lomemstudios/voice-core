@@ -124,4 +124,22 @@ class VoiceProfileStoreTest {
         assertTrue(print.save())
         assertEquals(listOf("voiceprint/print.bin"), written())
     }
+
+    @Test
+    fun aPrintAddedLaterJoinsTheProfileAndGoesWithIt() {
+        val s = store()
+        assertFalse("no profile to add to", s.addPrint("ecapa_sb-04b8df18", mapOf("" to floatArrayOf(1f))))
+        val d = s.draft("0.24", now = 1000)
+        d.addSample("speech", "", tone(1.0))
+        d.putPrint(name, mapOf("" to floatArrayOf(1f, 0f)))
+        assertTrue(d.commit())
+        assertTrue(s.addPrint("ecapa_sb-04b8df18", mapOf("" to floatArrayOf(0.6f, 0.8f))))
+        assertArrayEquals(floatArrayOf(0.6f, 0.8f), s.print("ecapa_sb-04b8df18")!![""], 0f)
+        assertEquals(listOf(name, "ecapa_sb-04b8df18"), s.status()!!.prints)
+        assertTrue("added again, replaced", s.addPrint("ecapa_sb-04b8df18", mapOf("" to floatArrayOf(1f, 0f))))
+        assertEquals(listOf(name, "ecapa_sb-04b8df18"), s.status()!!.prints)
+        assertEquals(1, s.status()!!.samples.size)
+        s.deleteAll()
+        assertNull(s.print("ecapa_sb-04b8df18"))
+    }
 }

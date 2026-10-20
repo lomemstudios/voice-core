@@ -55,6 +55,8 @@ class VoiceProfileStore(
     }
 
     private val dir = File(root, "profile")
+    /** The profile in use, for a copy elsewhere (Voice Next sends it to its server); read it under no write. */
+    val folder: File get() = dir
     private val next = File(root, "profile.new")
     private val old = File(root, "profile.old")
 
@@ -89,6 +91,27 @@ class VoiceProfileStore(
 
     /** A kept sample's audio. */
     fun audio(sample: KeptSample): ShortArray = readWav(File(dir, "samples/${sample.file}"))
+
+    /**
+     * Adds a print made later from the kept samples (the voice gate's ECAPA print, made after the TitaNet print), or
+     * replaces one of that name. The print file is written aside and renamed in, then the manifest the same way, so a
+     * cut leaves either the old profile or the new one. False without a profile.
+     */
+    @Synchronized
+    fun addPrint(name: String, vectors: Map<String, FloatArray>): Boolean {
+        val m = File(dir, "manifest.json").takeIf { it.exists() } ?: return false
+        val j = runCatching { JSONObject(m.readText()) }.getOrNull() ?: return false
+        val tmp = File(dir, "prints/$name.bin.tmp")
+        tmp.parentFile?.mkdirs()
+        writePrints(tmp, vectors)
+        if (!tmp.renameTo(File(dir, "prints/$name.bin"))) { tmp.delete(); return false }
+        val prints = j.optJSONArray("prints") ?: JSONArray()
+        if ((0 until prints.length()).none { prints.getString(it) == name }) prints.put(name)
+        j.put("prints", prints)
+        val mt = File(dir, "manifest.json.tmp")
+        mt.writeText(j.toString(1))
+        return mt.renameTo(m)
+    }
 
     /** A new profile, written aside until [Draft.commit] swaps it in. */
     @Synchronized
