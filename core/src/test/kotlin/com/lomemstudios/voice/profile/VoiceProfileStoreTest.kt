@@ -2,7 +2,6 @@ package com.lomemstudios.voice.profile
 
 import com.lomemstudios.voice.print.FakeEmbedder
 import com.lomemstudios.voice.print.PrintFile
-import com.lomemstudios.voice.print.Sample
 import com.lomemstudios.voice.print.VoicePrint
 import com.lomemstudios.voice.print.writePrints
 import org.junit.Assert.assertArrayEquals
@@ -104,26 +103,24 @@ class VoiceProfileStoreTest {
         assertFalse(s.migrate(name, "0.21"))
 
         // A new enrolment through VoicePrint keeps its samples and replaces the old file.
-        val print = VoicePrint(s.printStore(name, "0.21") { 6000 }, FakeEmbedder(), listOf("stop"))
+        val print = VoicePrint(s.printStore(name, "0.21") { 6000 }, FakeEmbedder())
         assertTrue(print.enrolled)
         print.restart()
-        repeat(3) { assertEquals(Sample.OK, print.add("stop", tone(0.6), "stop")) }
-        repeat(3) { assertEquals(Sample.OK, print.add(VoicePrint.SENTENCE, tone(3.0), "Sentence $it.")) }
+        repeat(5) { print.add(tone(3.5), "Piece $it.") }
         assertTrue(print.save())
         val after = s.status()!!
         assertFalse(after.migrated)
-        assertEquals(6, after.samples.size)
-        assertEquals(3 * 0.6 + 3 * 3.0, after.secondsKept, 1e-9)
-        assertEquals(listOf("Sentence 0.", "Sentence 1.", "Sentence 2."), after.samples.filter { it.kind == "sentence" }.map { it.text })
+        assertEquals(5, after.samples.size)
+        assertEquals(5 * 3.5, after.secondsKept, 1e-9)
+        assertEquals(List(5) { "Piece $it." }, after.samples.filter { it.kind == VoicePrint.SPEECH }.map { it.text })
         assertFalse(File(legacy, "print.bin").exists())
-        assertTrue(VoicePrint(s.printStore(name, "0.21"), FakeEmbedder(), listOf("stop")).enrolled)
+        assertTrue(VoicePrint(s.printStore(name, "0.21"), FakeEmbedder()).enrolled)
     }
 
     @Test
     fun aPrintFileStoreKeepsNoAudio() {
-        val print = VoicePrint(PrintFile(legacy), FakeEmbedder(), listOf("stop"))
-        repeat(3) { print.add("stop", tone(0.6)) }
-        repeat(3) { print.add(VoicePrint.SENTENCE, tone(3.0)) }
+        val print = VoicePrint(PrintFile(legacy), FakeEmbedder())
+        repeat(3) { print.add(tone(3.0)) }
         assertTrue(print.save())
         assertEquals(listOf("voiceprint/print.bin"), written())
     }

@@ -1,5 +1,5 @@
-// sherpa: the engines on sherpa-onnx 1.13.8 (Apache 2.0): TitaNet small as the voice print's Embedder and the
-// zipformer keyword spotter. The models stay in the app's assets; this module only names their paths.
+// sherpa: the engine on sherpa-onnx 1.13.8 (Apache 2.0): TitaNet small as the voice print's Embedder. The models
+// stay in the app's assets; this module only names their paths.
 plugins {
     id("com.android.library")
     `maven-publish`

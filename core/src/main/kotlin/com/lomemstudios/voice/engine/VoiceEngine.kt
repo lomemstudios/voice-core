@@ -9,7 +9,7 @@
 // follow. The normal audio mode comes back with restoreAudioMode().
 //
 // The microphone is read 50 ms at a time on the "audio" thread. Each frame goes to every tap (FrameFanOut: the
-// recognizer pipe, the keyword spotter, each on its own thread with its own bounded queue) and, with its level, to
+// recognizer pipe, later the voice gate, each on its own thread with its own bounded queue) and, with its level, to
 // the listener on the main thread, where the app's turn detector runs.
 
 package com.lomemstudios.voice.engine

@@ -1,8 +1,9 @@
-// The user's voice print: made once at enrolment from each command said a few times and a few sentences read,
-// kept on the phone only, never sent anywhere by this library. Where it is kept is a PrintStore: the voice profile
-// (profile.VoiceProfileStore, which also keeps the accepted samples' audio), or the old single file print.bin in the
-// folder the app gives (PrintFile). Plain logic over an Embedder, so it is unit-tested; the real embedder is the
-// on-device model (the sherpa module's SherpaEmbedder).
+// The user's voice print: made once at enrolment from about 15 to 20 s of their free speech (enrol.SpeechEnrolment
+// decides which speech counts), kept on the phone only, never sent anywhere by this library. Where it is kept is a
+// PrintStore: the voice profile (profile.VoiceProfileStore, which also keeps the accepted speech as audio, ready for
+// the pVAD's ECAPA vector later), or the old single file print.bin in the folder the app gives (PrintFile). Plain
+// logic over an Embedder, so it is unit-tested; the real embedder is the on-device model (the sherpa module's
+// SherpaEmbedder).
 
 package com.lomemstudios.voice.print
 
@@ -18,12 +19,11 @@ interface Embedder {
     fun embed(pcm: ShortArray): FloatArray?
 }
 
-enum class Sample { OK, TOO_QUIET, TOO_SHORT, TOO_LONG, FAILED }
-
-/** One accepted enrolment sample: its kind (a command word, or [VoicePrint.SENTENCE]), what was to be said, its audio. */
+/** One accepted piece of enrolment speech: its kind ([VoicePrint.SPEECH]), what was read if anything, its audio. */
 class EnrolSample(val kind: String, val text: String, val pcm: ShortArray)
 
-/** Where a print is kept: the named mean vectors ("" the general print, then one per command). */
+/** Where a print is kept: the named mean vectors ("" the print; a profile of version 0.1 also has one per command
+ *  word, which nothing reads any more). */
 interface PrintStore {
     fun load(): Map<String, FloatArray>
     /** Replaces the kept print, and the samples it was made from where the store keeps them; false when it could not. */
@@ -62,20 +62,20 @@ fun readPrints(file: File): Map<String, FloatArray> = runCatching {
     }
 }.getOrDefault(emptyMap())
 
-class VoicePrint(private val store: PrintStore, private val embedder: Embedder, val commands: List<String>) {
+class VoicePrint(private val store: PrintStore, private val embedder: Embedder) {
     /** The print in print.bin in [dir], as before the voice profile. */
-    constructor(dir: File, embedder: Embedder, commands: List<String>) : this(PrintFile(dir), embedder, commands)
+    constructor(dir: File, embedder: Embedder) : this(PrintFile(dir), embedder)
 
     companion object {
-        const val SENTENCE = "sentence"
-        const val PER_COMMAND = 3
-        const val SENTENCES = 3
+        const val SPEECH = "speech"
+        /** The kept speech is embedded in windows this long: TitaNet small's error was lowest from 3 s of speech
+         *  (Claude Voice's bench of 17 October: 10% on 1 s, 5.5% on 2 s, 3.7% on 3 s). */
+        const val WINDOW_S = 3.0
+        /** A last window shorter than this is not embedded on its own. */
+        const val MIN_WINDOW_S = 1.5
         private const val RATE = 16000
-        /** A sample quieter than this (RMS, dB below full scale) is asked again. */
-        private const val MIN_LEVEL_DB = -45.0
     }
 
-    private val samples = mutableMapOf<String, MutableList<FloatArray>>()
     private val kept = mutableListOf<EnrolSample>()
     private var prints: Map<String, FloatArray> = store.load()
 
@@ -83,7 +83,6 @@ class VoicePrint(private val store: PrintStore, private val embedder: Embedder, 
 
     /** Starts enrolment again; the old print stays until the new one is saved. */
     fun restart() {
-        samples.clear()
         kept.clear()
     }
 
@@ -92,32 +91,20 @@ class VoicePrint(private val store: PrintStore, private val embedder: Embedder, 
         prints = store.load()
     }
 
-    /** Checks and adds one sample; [text] is what was to be said, kept with the audio where the store keeps it. */
-    fun add(kind: String, pcm: ShortArray, text: String = ""): Sample {
-        val seconds = pcm.size.toDouble() / RATE
-        val (min, max) = if (kind == SENTENCE) 1.5 to 15.0 else 0.25 to 2.5
-        if (seconds < min) return Sample.TOO_SHORT
-        if (seconds > max) return Sample.TOO_LONG
-        if (levelDb(pcm) < MIN_LEVEL_DB) return Sample.TOO_QUIET
-        val e = embedder.embed(pcm) ?: return Sample.FAILED
-        samples.getOrPut(kind) { mutableListOf() } += normalized(e)
-        kept += EnrolSample(kind, text, pcm)
-        return Sample.OK
+    /** Keeps one piece of accepted speech; [text] is what was read, if the user read something. */
+    fun add(pcm: ShortArray, text: String = "", kind: String = SPEECH) {
+        if (pcm.isNotEmpty()) kept += EnrolSample(kind, text, pcm)
     }
 
-    /** What still needs samples, commands first. */
-    fun missing(): List<String> =
-        commands.filter { (samples[it]?.size ?: 0) < PER_COMMAND } +
-            (if ((samples[SENTENCE]?.size ?: 0) < SENTENCES) listOf(SENTENCE) else emptyList())
+    /** Seconds of audio kept so far. */
+    val seconds: Double get() = kept.sumOf { it.pcm.size }.toDouble() / RATE
 
-    val complete get() = missing().isEmpty()
-
-    /** Writes the new print over the old one; false while enrolment is incomplete. */
+    /** Makes the print from the kept speech, joined and embedded in [WINDOW_S] windows, and writes it over the old one
+     *  with the speech; false when nothing was kept, nothing could be embedded, or the store failed. */
     fun save(): Boolean {
-        if (!complete) return false
-        val all = samples.values.flatten()
-        val out = mutableMapOf("" to mean(all))
-        for (c in commands) out[c] = mean(samples[c]!!)
+        val vectors = windows(kept.map { it.pcm }).mapNotNull { embedder.embed(it) }.map(::normalized)
+        if (vectors.isEmpty()) return false
+        val out = mapOf("" to mean(vectors))
         if (!store.save(out, kept.toList())) return false
         prints = out
         restart()
@@ -125,16 +112,32 @@ class VoicePrint(private val store: PrintStore, private val embedder: Embedder, 
     }
 
     /** Cosine similarity of this speech with the user's print; null without a print. */
-    fun score(pcm: ShortArray): Float? = against("", pcm)
-
-    /** A command's half second, against that command's own print when enrolled, else the general one. */
-    fun scoreCommand(word: String, pcm: ShortArray): Float? = against(if (word in prints) word else "", pcm)
-
-    private fun against(name: String, pcm: ShortArray): Float? {
-        val print = prints[name] ?: return null
+    fun score(pcm: ShortArray): Float? {
+        val print = prints[""] ?: return null
         val e = embedder.embed(pcm) ?: return null
         return dot(normalized(e), print)
     }
+}
+
+/** The pieces joined and cut into [VoicePrint.WINDOW_S] windows; a last window under [VoicePrint.MIN_WINDOW_S] joins
+ *  the one before, and speech shorter than one window is one window. */
+internal fun windows(pieces: List<ShortArray>, rate: Int = 16000): List<ShortArray> {
+    val total = pieces.sumOf { it.size }
+    if (total == 0) return emptyList()
+    val all = ShortArray(total)
+    var at = 0
+    for (p in pieces) { System.arraycopy(p, 0, all, at, p.size); at += p.size }
+    val size = (VoicePrint.WINDOW_S * rate).toInt()
+    val min = (VoicePrint.MIN_WINDOW_S * rate).toInt()
+    if (total < size + min) return listOf(all)
+    val out = mutableListOf<ShortArray>()
+    var from = 0
+    while (total - from >= size + min) {
+        out += all.copyOfRange(from, from + size)
+        from += size
+    }
+    out += all.copyOfRange(from, total)
+    return out
 }
 
 private fun normalized(v: FloatArray): FloatArray {

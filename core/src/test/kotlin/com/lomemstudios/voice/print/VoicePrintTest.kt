@@ -2,7 +2,6 @@ package com.lomemstudios.voice.print
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -20,43 +19,38 @@ class FakeEmbedder : Embedder {
 class VoicePrintTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private fun voice(who: Int, seconds: Double = 0.6, level: Short = 8000): ShortArray =
-        ShortArray((16000 * seconds).toInt()) { i -> if (i == 0) who.toShort() else (if (i % 2 == 0) level else (-level).toShort()) }
+    /** Speech of one voice: FakeEmbedder reads the voice from the first sample of each window, so every sample is it. */
+    private fun voice(who: Int, seconds: Double = 3.0): ShortArray = ShortArray((16000 * seconds).toInt()) { (4000 + who).toShort() }
 
-    private fun enrolAll(print: VoicePrint, who: Int = 1) {
-        for (word in print.commands) repeat(3) { assertEquals(Sample.OK, print.add(word, voice(who))) }
-        repeat(3) { assertEquals(Sample.OK, print.add(VoicePrint.SENTENCE, voice(who, seconds = 3.0))) }
+    private fun enrol(print: VoicePrint, who: Int = 1) {
+        repeat(5) { print.add(voice(who, seconds = 3.2), "Piece $it.") }
     }
 
     @Test
-    fun enrolmentNeedsEveryCommand() {
-        val print = VoicePrint(folder.root, FakeEmbedder(), listOf("stop", "mute"))
-        repeat(3) { print.add("stop", voice(1)) }
-        repeat(3) { print.add(VoicePrint.SENTENCE, voice(1, seconds = 3.0)) }
-        assertFalse(print.complete)
-        assertEquals(listOf("mute"), print.missing())
+    fun nothingKeptSavesNothing() {
+        val print = VoicePrint(folder.root, FakeEmbedder())
         assertFalse(print.save())
-        repeat(3) { print.add("mute", voice(1)) }
-        assertTrue(print.complete)
+        assertFalse(print.enrolled)
+        print.add(voice(1))
         assertTrue(print.save())
         assertTrue(print.enrolled)
     }
 
     @Test
-    fun aBadSampleIsAskedAgain() {
-        val print = VoicePrint(folder.root, FakeEmbedder(), listOf("stop"))
-        assertEquals(Sample.TOO_QUIET, print.add("stop", voice(1, level = 30)))
-        assertEquals(Sample.TOO_SHORT, print.add("stop", voice(1, seconds = 0.1)))
-        assertEquals(Sample.TOO_LONG, print.add("stop", voice(1, seconds = 4.0)))
-        assertEquals(Sample.TOO_SHORT, print.add(VoicePrint.SENTENCE, voice(1, seconds = 0.8)))
-        assertEquals(listOf("stop", VoicePrint.SENTENCE), print.missing())
+    fun theSpeechIsEmbeddedInThreeSecondWindows() {
+        val rate = 16000
+        fun lengths(vararg s: Double) = windows(s.map { ShortArray((it * rate).toInt()) }).map { it.size.toDouble() / rate }
+        assertEquals(listOf(3.0, 3.0, 3.0, 3.0, 4.0), lengths(10.0, 6.0))  // a short last window joins the one before
+        assertEquals(listOf(3.0, 1.5), lengths(4.5))
+        assertEquals(listOf(2.0), lengths(2.0))  // shorter than a window: one window
+        assertTrue(windows(emptyList()).isEmpty())
     }
 
     @Test
     fun printStoredOnPhoneOnly() {
         val files = folder.newFolder("files")
-        val print = VoicePrint(File(files, "voiceprint"), FakeEmbedder(), listOf("stop"))
-        enrolAll(print)
+        val print = VoicePrint(File(files, "voiceprint"), FakeEmbedder())
+        enrol(print)
         assertTrue(print.save())
         assertTrue(File(files, "voiceprint/print.bin").exists())
         // Nothing else is written: the print is the one file, in the app's folder. (That no code which talks to a
@@ -68,31 +62,22 @@ class VoicePrintTest {
     @Test
     fun reEnrolReplacesPrint() {
         val dir = File(folder.root, "vp")
-        val first = VoicePrint(dir, FakeEmbedder(), listOf("stop"))
-        enrolAll(first, who = 1)
+        val first = VoicePrint(dir, FakeEmbedder())
+        enrol(first, who = 1)
         first.save()
         assertTrue(first.score(voice(1))!! > 0.9f)
-        val second = VoicePrint(dir, FakeEmbedder(), listOf("stop"))
+        val second = VoicePrint(dir, FakeEmbedder())
         second.restart()
-        enrolAll(second, who = 2)
+        enrol(second, who = 2)
         second.save()
-        val loaded = VoicePrint(dir, FakeEmbedder(), listOf("stop"))
+        val loaded = VoicePrint(dir, FakeEmbedder())
         assertTrue(loaded.score(voice(2))!! > 0.9f)
         assertTrue(loaded.score(voice(1))!! < 0.2f)
     }
 
     @Test
-    fun aCommandIsScoredAgainstItsOwnPrint() {
-        val print = VoicePrint(folder.root, FakeEmbedder(), listOf("stop"))
-        enrolAll(print, who = 3)
-        print.save()
-        assertTrue(print.scoreCommand("stop", voice(3))!! > 0.9f)
-        assertNotNull(print.scoreCommand("repeat", voice(3)))  // not enrolled as a command: the general print
-    }
-
-    @Test
     fun notEnrolledScoresNothing() {
-        val print = VoicePrint(folder.root, FakeEmbedder(), listOf("stop"))
+        val print = VoicePrint(folder.root, FakeEmbedder())
         assertNull(print.score(voice(1)))
     }
 }

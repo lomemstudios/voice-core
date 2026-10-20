@@ -1,6 +1,6 @@
-// The microphone's frames to every consumer that wants them: the recognizer pipe, the keyword spotter, later the
+// The microphone's frames to every consumer that wants them: the recognizer pipe, later the
 // voice gate. Each consumer has a bounded queue and a thread of its own, so a slow one drops its own frames and never
-// holds up the microphone or another consumer (as VoiceService's recognizer and keyword queues did before 0.7).
+// holds up the microphone or another consumer (as VoiceService's recognizer queue did before 0.7).
 
 package com.lomemstudios.voice.audio
 

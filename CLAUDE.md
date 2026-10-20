@@ -25,12 +25,14 @@ and the decisions taken.
 - `core` (`com.lomemstudios.voice`, Kotlin on Android, with ONNX Runtime for Android 1.22.0 for pVAD):
   - `turn`: `TurnDetector`, `TurnConfig`, `TurnEvent`, `TurnStats`, `Words`. When a turn starts and ends, from levels
     and the recognizer's words.
-  - `print`: `VoicePrint` (the print over any `Embedder`, in the folder the app gives), `SpeakerCheck` (a turn's and a
-    barge-in's thresholds, graded by the length of speech scored), `TurnVerdict`.
-  - `enrol`: `EnrolmentGuide` (what to say next, and the tone, line and words after each sample).
+  - `print`: `VoicePrint` (the print over any `Embedder` from the accepted enrolment speech, embedded in 3 s windows,
+    in the store the app gives), `SpeakerCheck` (a turn's and a barge-in's thresholds, graded by the length of speech
+    scored), `TurnVerdict`.
+  - `enrol`: `SpeechEnrolment` (free-speech enrolment: a room check, then the pieces of the user's speech that are
+    clear enough, until 15 s of speech, ending by itself at 20 s; the progress and a plain-language line), `EnrolConfig`.
   - `call`: `CallRoute` (which communication device a session uses; never the earpiece), `EchoMeter` (how far over the
     floor an answer came back while it played).
-  - `engines`: `KeywordSpotting`, `EngineFactory`, and `NoEngines` for a build without a model runtime.
+  - `engines`: `EngineFactory` (the embedder), and `NoEngines` for a build without a model runtime.
   - `models`: `ModelManifest` (every model, pinned: name, SHA-256, size, licence, source) and `ModelStore` (bundled
     or on-demand; a bundled model is hashed once per app build, a mismatch is never used, a bad download deleted).
   - `profile`: `VoiceProfileStore` (`<filesDir>/voice/profile`: kept enrolment samples as WAV, one print per model
@@ -41,16 +43,15 @@ and the decisions taken.
   - `pvad`: `Pvad`, FireRedChat pVAD on ONNX Runtime, one stream per microphone, its state carried between steps.
   - `bench`: `PhoneBench` (the phone speed test: pVAD paced as Phase 1 runs it, then flat out, and any `BenchPart`),
     `SyntheticAudio` (deterministic, equal to the Python reference sample for sample), `StepStats`, `Device`.
-- `sherpa` (`com.lomemstudios.voice.sherpa`): `SherpaEngines.factory(context, keywordsFile, log, models)` on sherpa-onnx
-  1.13.8: TitaNet small as the `Embedder`, the zipformer keyword spotter. The keyword list and the model files are the
-  app's own assets; `SherpaModels` names their paths (defaults are where Voice Next bundles them). `SherpaBench` gives
-  the speed test's TitaNet and GTCRN parts.
+- `sherpa` (`com.lomemstudios.voice.sherpa`): `SherpaEngines.factory(context, log, models)` on sherpa-onnx 1.13.8:
+  TitaNet small as the `Embedder`. The model files are the app's own assets; `SherpaModels` names their paths (the
+  default is where Voice Next bundles it). `SherpaBench` gives the speed test's TitaNet and GTCRN parts. There is no
+  keyword spotter since 0.2.0 (Petros, 20 October: Voice Next's spoken commands are understood by its server instead).
 - An app with both modules has two ONNX Runtimes in one process (core's, and the one linked into sherpa-onnx's JNI
   library); they ran side by side in the speed test on main's x86-64 emulator. sherpa-onnx's AAR also ships
   `lib/x86/libonnxruntime.so`, so the app needs `packaging.jniLibs.pickFirsts += "lib/x86/libonnxruntime.so"`.
-- Stays in each app: screens, sounds, the server protocol, the command words and their thresholds (Voice Next's
-  `SpeakerGate`), the turn detector's host and the recognizer (until plan step 1.18), and the players, which take
-  their usage from `VoiceEngine.playUsage()`.
+- Stays in each app: screens, sounds, the server protocol, the turn detector's host and the recognizer (until plan step
+  1.18), and the players, which take their usage from `VoiceEngine.playUsage()`.
 - `VoiceEngine` in `core` owns the microphone and call-path audio (since 0.2.0, plan step 0.7): an app never opens
   `AudioRecord` or switches the audio mode itself. It reads 50 ms frames on its "audio" thread, gives each to every
   tap (its own thread and bounded queue; a slow tap drops its own frames) and, with its level, to the listener on the
@@ -69,10 +70,14 @@ and the decisions taken.
 
 ## Enrolment rules bind every app
 
-Each was a reason Petros could not finish enrolment (17 October): one sample per tone; every sample gets the `got_it`
-or `ignored` tone at once, with its count or reason on screen; the guide speaks only between samples; the microphone
-takes no sample while the guide or a tone plays; nothing else plays during enrolment. `EnrolmentGuide` gives the tone,
-the line and the words; until `EnrolmentSession` (plan step 1.11) the app enforces the microphone side.
+Enrolment is free speech since 0.2.0 (Petros, 20 October): the user reads a short paragraph aloud
+(`SpeechEnrolment.PARAGRAPH`) or talks about anything, with a live level, a progress bar of accepted seconds and a
+plain-language line, and finishes once 15 s of speech are in. The word-by-word guide before it refused speech 14 dB over
+the floor as "too quiet" and a 2.65 s word as "too long" until he gave up (field log, 20 October 08:11), so the checks
+stay lenient: speech from 6 dB over the floor, refused only when on average under 10 dB over it or clipped, never too
+long. The rules that still bind every app: the microphone takes no sample while the guide speaks or a tone plays (the
+app calls `hold()`, which drops an open piece); the guide speaks only before the speech and at its end; nothing else
+plays during enrolment. `SpeechEnrolmentTest` pins the thresholds.
 
 ## Build and test
 

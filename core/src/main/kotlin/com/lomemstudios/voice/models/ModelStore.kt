@@ -1,6 +1,6 @@
 // Where each model a consumer uses comes from, and the check that its bytes are the pinned ones (ModelManifest).
 //
-// A model is either bundled in the app's assets (Voice Next bundles TitaNet, the keyword spotter, pVAD and GTCRN) or
+// A model is either bundled in the app's assets (Voice Next bundles TitaNet, pVAD and GTCRN) or
 // fetched on demand into the store's folder, named by its SHA-256 (ECAPA, from plan step 1.2). Nothing is used
 // before its SHA-256 matches: a fetched file that does not match is deleted, a bundled one that does not match is
 // reported and not used. Hashing a 40 MB model takes a moment on a phone, so a bundled model that matched once is

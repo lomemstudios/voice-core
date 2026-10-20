@@ -1,5 +1,5 @@
 // The sherpa models in the phone speed test (core's PhoneBench): TitaNet small through the very Embedder the app runs
-// (SherpaEmbedder, 2 threads), scored on 1 s windows as a command or a short turn is, and GTCRN, sherpa-onnx's
+// (SherpaEmbedder, 2 threads), scored on 1 s windows as a short turn is, and GTCRN, sherpa-onnx's
 // streaming speech denoiser, fed 50 ms chunks on one thread as a de-noising stage would be.
 
 package com.lomemstudios.voice.sherpa
