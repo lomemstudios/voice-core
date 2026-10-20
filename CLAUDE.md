@@ -133,7 +133,7 @@ plays during enrolment. `SpeechEnrolmentTest` pins the thresholds.
 - Publishing is Petros's step, never Claude's without his go: push `main`, tag, then
   `gh release create v<version> build/release/voice-core-<version>-maven.zip`. The repository is
   github.com/lomemstudios/voice-core (public); v0.1.0 is released, and v0.2.0 (20 October, SHA-256 `c9d1e2f2…`,
-  published by Claude on the voice gate build's brief from Petros).
+  published by Claude on the voice gate build's brief from Petros). v0.2.1 (20 October, SHA-256 `6cf0b592…`: the picked device in `CallRoute.choose(preferredId)` and `VoiceEngine(preferredDevice)`, `VoiceEngine.inputDevice`; no model changes), published by Claude on the UX round two brief from Petros.
 - Each consumer pins one version and its SHA-256, and upgrading is a commit there. Voice Next: `voiceCoreVersion` in
   `android/app/build.gradle.kts`, and `voice_core_version`, `voice_core_repo` and `voice_core_sha256` in
   `android/tools/fetch_voiceprint.sh`. lomem: `packages/voice-native` (Phase 4).
