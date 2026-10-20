@@ -54,6 +54,9 @@ class VoiceEngine(
     /** Settings, read at each choice: call audio (the platform's echo canceller), else the old media path. */
     private val callAudio: () -> Boolean,
     private val listener: VoiceEngineListener,
+    /** Settings, read at each choice: the id in availableCommunicationDevices of the device the user picked, which
+     *  wins while it is listed; null for the automatic order. */
+    private val preferredDevice: () -> Int? = { null },
 ) {
     companion object {
         const val RATE = 16000
@@ -81,6 +84,9 @@ class VoiceEngine(
 
     /** The platform's echo canceller is attached and on. */
     val echoCancellerOn: Boolean get() = aec?.enabled == true
+
+    /** The microphone the recording really comes from, as the platform routed it; null with no recording. */
+    val inputDevice: AudioDeviceInfo? get() = runCatching { record?.routedDevice }.getOrNull()
 
     /** A consumer of every frame on its own thread (FrameFanOut.tap). */
     fun tap(name: String, capacity: Int, accept: () -> Boolean = { true }, onClose: () -> Unit = {},
@@ -116,7 +122,8 @@ class VoiceEngine(
     /** Chooses the route now and applies it when it changed, or always with [force]. */
     fun chooseRoute(why: String, force: Boolean = false) {
         if (!running) return
-        val next = CallRoute.choose(communicationDevices(), useBluetooth = useBluetooth(), callAudio = callAudio())
+        val next = CallRoute.choose(communicationDevices(), useBluetooth = useBluetooth(), callAudio = callAudio(),
+            preferredId = preferredDevice())
         val action = RouteSteps.action(route, next, recording = record != null, force = force)
         if (action == RouteAction.KEEP) return
         applyRoute(next)

@@ -65,6 +65,11 @@ and the decisions taken.
   `AudioRecord` or switches the audio mode itself. It reads 50 ms frames on its "audio" thread, gives each to every
   tap (its own thread and bounded queue; a slow tap drops its own frames) and, with its level, to the listener on the
   main thread.
+- A device the user picks (0.2.1, Claude Voice Next's Audio page, 20 October): `VoiceEngine(preferredDevice = …)` gives
+  the id in `availableCommunicationDevices` of the picked device, and `CallRoute.choose(preferredId = …)` takes it over
+  the automatic order while it is listed, whatever its type or the Bluetooth setting, never the earpiece; when it is not listed the order decides. The app keeps
+  the pick by its own key and resolves it to an id at each choice; a change is applied with `chooseRoute`, never by
+  restarting the session. `VoiceEngine.inputDevice` is the recording's routed microphone, for the screens.
 
 ## The detector is the reference
 

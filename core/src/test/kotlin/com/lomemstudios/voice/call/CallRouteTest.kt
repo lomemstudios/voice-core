@@ -113,4 +113,28 @@ class CallRouteTest {
         assertTrue(onSpeaker.sameAs(again))
         assertFalse(onSpeaker.sameAs(inCar))
     }
+
+    @Test
+    fun aPickedDeviceWinsWhileItIsListed() {
+        // Picked over the order: the car while a wired headset is in, the speaker while the earbuds are connected.
+        assertEquals(car, CallRoute.choose(listOf(speaker, car, wired), useBluetooth = true, callAudio = true, preferredId = car.id).device)
+        assertEquals(speaker, CallRoute.choose(listOf(speaker, earbuds), useBluetooth = true, callAudio = true, preferredId = speaker.id).device)
+    }
+
+    @Test
+    fun aPickedDeviceWinsOutsideTheOrderAndWithBluetoothOff() {
+        val bleSpeaker = AudioOut(44, TYPE_BLE_SPEAKER, "Soundbar")
+        assertEquals(bleSpeaker, CallRoute.choose(listOf(speaker, bleSpeaker), useBluetooth = true, callAudio = true, preferredId = bleSpeaker.id).device)
+        assertEquals(earbuds, CallRoute.choose(listOf(speaker, earbuds), useBluetooth = false, callAudio = true, preferredId = earbuds.id).device)
+    }
+
+    @Test
+    fun aPickedDeviceThatIsGoneLeavesTheOrderToDecide() {
+        assertEquals(car, CallRoute.choose(listOf(speaker, car), useBluetooth = true, callAudio = true, preferredId = earbuds.id).device)
+    }
+
+    @Test
+    fun theEarpieceIsNeverTakenEvenWhenPicked() {
+        assertEquals(speaker, CallRoute.choose(listOf(earpiece, speaker), useBluetooth = true, callAudio = true, preferredId = earpiece.id).device)
+    }
 }

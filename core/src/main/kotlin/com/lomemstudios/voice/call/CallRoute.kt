@@ -6,13 +6,16 @@
 //
 // Order: a wired or USB headset (plugged in by hand, so wanted), an LE Audio headset, classic Bluetooth hands-free
 // (the car, or earbuds), a hearing aid, then the phone's loudspeaker. Never the earpiece: this is hands-free.
-// Bluetooth can be turned off in Settings. With call audio off, the old path: media playback and the recognition
+// Bluetooth can be turned off in Settings. A device the user picked (by its id in availableCommunicationDevices) wins
+// over that order while it is listed, and the order decides again when it is not; the earpiece is never taken, picked
+// or not. With call audio off, the old path: media playback and the recognition
 // microphone on the speaker, and headset mode only for Bluetooth, whose microphone opens only on the call link.
 
 package com.lomemstudios.voice.call
 
 import android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
 import android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+import android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
 import android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC
 import android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
 import android.media.AudioDeviceInfo.TYPE_HEARING_AID
@@ -40,9 +43,12 @@ object CallRoute {
     val BLUETOOTH = setOf(TYPE_BLE_HEADSET, TYPE_BLUETOOTH_SCO, TYPE_HEARING_AID)
     private val ORDER = HEADSETS + listOf(TYPE_BLE_HEADSET, TYPE_BLUETOOTH_SCO, TYPE_HEARING_AID, TYPE_BUILTIN_SPEAKER)
 
-    fun choose(available: List<AudioOut>, useBluetooth: Boolean, callAudio: Boolean): Route {
+    /** [preferredId]: the device the user picked, by its id in [available]; it wins while it is listed, whatever its
+     *  type and the Bluetooth setting, except the earpiece. */
+    fun choose(available: List<AudioOut>, useBluetooth: Boolean, callAudio: Boolean, preferredId: Int? = null): Route {
+        val picked = preferredId?.let { id -> available.firstOrNull { it.id == id && it.type != TYPE_BUILTIN_EARPIECE } }
         val allowed = available.filter { it.type in ORDER && (useBluetooth || it.type !in BLUETOOTH) }
-        val best = allowed.minByOrNull { ORDER.indexOf(it.type) } ?: return Route(null, call = false)
+        val best = picked ?: allowed.minByOrNull { ORDER.indexOf(it.type) } ?: return Route(null, call = false)
         if (!callAudio && best.type == TYPE_BUILTIN_SPEAKER) return Route(null, call = false)
         return Route(best, call = true)
     }
