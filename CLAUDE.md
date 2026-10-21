@@ -65,6 +65,12 @@ and the decisions taken.
   `AudioRecord` or switches the audio mode itself. It reads 50 ms frames on its "audio" thread, gives each to every
   tap (its own thread and bounded queue; a slow tap drops its own frames) and, with its level, to the listener on the
   main thread.
+- `setMode(MODE_IN_COMMUNICATION)` needs `MODIFY_AUDIO_SETTINGS`, a normal permission granted at install with no
+  prompt. `core`'s own manifest declares it (0.2.2, 21 October), so every app that uses `VoiceEngine` gets it through
+  the manifest merge. Before 0.2.2 no manifest declared it and Android refused the mode with only a logcat warning
+  (`Audio Settings Permission Denial: setMode()`): Voice Next's call path ran in `MODE_NORMAL` from its version 10 to
+  25 (checked on the emulator, 21 October). The `route:` log line reads the mode back from the system ("mode in
+  communication"), and a refused mode logs "Android refused communication mode".
 - A device the user picks (0.2.1, Claude Voice Next's Audio page, 20 October): `VoiceEngine(preferredDevice = …)` gives
   the id in `availableCommunicationDevices` of the picked device, and `CallRoute.choose(preferredId = …)` takes it over
   the automatic order while it is listed, whatever its type or the Bluetooth setting, never the earpiece; when it is not listed the order decides. The app keeps

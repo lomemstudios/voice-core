@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- VoiceEngine sets MODE_IN_COMMUNICATION for the call path. Without this normal permission (granted at install,
+         no prompt) Android refuses setMode with only a logcat warning and stays in MODE_NORMAL; every app that uses
+         the engine gets it through the manifest merge. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+</manifest>

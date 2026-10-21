@@ -128,7 +128,8 @@ class VoiceEngine(
         if (action == RouteAction.KEEP) return
         applyRoute(next)
         route = next
-        log("route: ${next.label}, ${if (next.call) "call audio" else "media"} ($why)")
+        // The mode as the system has it, not as asked: without MODIFY_AUDIO_SETTINGS setMode is refused silently.
+        log("route: ${next.label}, ${if (next.call) "call audio" else "media"}, mode ${modeName(audioManager.mode)} ($why)")
         listener.onRoute(next)
         if (action == RouteAction.APPLY_AND_RESTART) {
             stopAudio()
@@ -145,8 +146,18 @@ class VoiceEngine(
             return
         }
         if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION)
+            log("Android refused communication mode, still ${modeName(audioManager.mode)}: is MODIFY_AUDIO_SETTINGS declared?")
         val info = audioManager.availableCommunicationDevices.firstOrNull { it.id == out.id }
         if (info == null || !audioManager.setCommunicationDevice(info)) log("could not route the call audio to ${r.label}")
+    }
+
+    private fun modeName(mode: Int) = when (mode) {
+        AudioManager.MODE_NORMAL -> "normal"
+        AudioManager.MODE_IN_COMMUNICATION -> "in communication"
+        AudioManager.MODE_IN_CALL -> "in call"
+        AudioManager.MODE_RINGTONE -> "ringtone"
+        else -> mode.toString()
     }
 
     /** The phone's audio as it was before the session: no communication device of ours, the normal mode. */
