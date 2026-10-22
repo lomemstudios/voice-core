@@ -5,7 +5,8 @@
 #
 # The zip holds a Maven repository: com.lomemstudios.voice:core and :sherpa (AAR, POM, sources), and the
 # third-party AARs that are on no public repository, republished unchanged (com.lomemstudios.voice.deps), with
-# LICENSE and NOTICE at the top. A consumer unzips it into a folder and adds that folder as a maven { url } repository.
+# LICENSE, NOTICE and licences/ at the top. A consumer unzips it into a folder and adds that folder as a
+# maven { url } repository.
 #
 # Publishing is a separate step the owner takes (CLAUDE.md, "Releases and pinning"): tag v<version> on a clean main,
 # then `gh release create v<version> build/release/voice-core-<version>-maven.zip --notes-file <notes>`. Consumers
@@ -23,7 +24,7 @@ rm -rf "$out"
 ./gradlew --quiet test publishAllPublicationsToReleaseRepository
 mkdir -p "$repo/com/lomemstudios/voice/deps"
 cp -R "$deps/com/lomemstudios/voice/deps/." "$repo/com/lomemstudios/voice/deps/"
-cp LICENSE NOTICE "$repo/"
+cp -R LICENSE NOTICE licences "$repo/"
 # maven-metadata.xml only serves version ranges and carries the build time; consumers pin one version.
 find "$repo" -name 'maven-metadata.xml*' -delete
 zip="voice-core-$version-maven.zip"

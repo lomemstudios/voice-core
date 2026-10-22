@@ -6,24 +6,57 @@ Licensed under the Apache License, Version 2.0 (LICENSE).
 This product uses the following third-party software, under their own licences. None of it is in this repository;
 tools/fetch_deps.sh fetches it, pinned by SHA-256, and a release zip carries it unchanged.
 
-  sherpa-onnx 1.13.8 (k2-fsa), the Android AAR, in the sherpa module        Apache 2.0
-  ONNX Runtime, linked into the sherpa-onnx AAR (Microsoft)                  MIT
-  ONNX Runtime for Android 1.22.0 (Microsoft), from Maven Central, in core   MIT
+  sherpa-onnx 1.13.8 (k2-fsa), the Android AAR, in the sherpa module        Apache 2.0 for the repository; the AAR
+                                                                             also holds eSpeak NG and piper-phonemize,
+                                                                             GPL-3.0, compiled into
+                                                                             libsherpa-onnx-jni.so (see below)
+  ONNX Runtime 1.28.2, linked into the sherpa-onnx AAR (Microsoft)           MIT, with ThirdPartyNotices (below)
+  ONNX Runtime for Android 1.22.0 (Microsoft), from Maven Central, in core   MIT, with ThirdPartyNotices (below)
   org.json 20260814 (tests only)                                             Public Domain
   JUnit 4.13.2 (tests only)                                                  Eclipse Public License 1.0
+
+sherpa-onnx's GPL-3.0 content: the pinned 1.13.8 AAR (SHA-256 b22c3fc1...) compiles eSpeak NG and piper-phonemize,
+both GPL-3.0, into libsherpa-onnx-jni.so (https://github.com/k2-fsa/sherpa-onnx/issues/3731). A build that ships the
+sherpa module in a closed app needs sherpa-onnx rebuilt with -DSHERPA_ONNX_ENABLE_TTS=OFF, or sherpa-onnx 2.0.0 once
+it is released (eSpeak NG removed on master on 2026-10-20, https://github.com/k2-fsa/sherpa-onnx/issues/3969).
+
+ONNX Runtime's third-party notices (among them Eigen, Mozilla Public License 2.0), one file per copy, unchanged from
+the version tags:
+
+  licences/onnxruntime-1.22.0-ThirdPartyNotices.txt
+      https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/ThirdPartyNotices.txt
+  licences/onnxruntime-1.28.2-ThirdPartyNotices.txt
+      https://raw.githubusercontent.com/microsoft/onnxruntime/v1.28.2/ThirdPartyNotices.txt
+
+ONNX Runtime's licence: https://github.com/microsoft/onnxruntime/blob/v1.22.0/LICENSE
 
 Models are not in this repository or its releases. The app bundles them in its own assets, or fetches them on demand
 (ModelStore), under their own licences:
 
-  Speaker model: NVIDIA NeMo TitaNet small, as released by sherpa-onnx       CC BY 4.0 for TitaNet on Hugging Face; to
-                                                                             confirm for the small model on NVIDIA NGC
-                                                                             before a store release
+  Speaker model: NVIDIA NeMo TitaNet small, as released by sherpa-onnx       Apache 2.0, the NeMo Toolkit licence that
+                                                                             NGC's titanet_small page names (CC BY 4.0
+                                                                             is the large model's licence on Hugging
+                                                                             Face)
   Personal voice activity: FireRedChat pVAD (FireRedTeam), int8 ONNX       Apache 2.0 (model card and NOTICE); its
                                                                              speaker vectors come from SpeechBrain
                                                                              spkrec-ecapa-voxceleb, Apache 2.0
-  Speech denoiser: GTCRN (Xiaobin Rong), as converted by sherpa-onnx         MIT
-  Voice print for the voice gate: SpeechBrain spkrec-ecapa-voxceleb         Apache 2.0 (the weights; trained on
-  (revision 0f99f2d0), exported with its front end by tools/export_ecapa.py   VoxCeleb, CC BY 4.0 per its site)
+  Speech denoiser: GTCRN (Xiaobin Rong), as converted by sherpa-onnx         MIT; trained on the DNS Challenge's DNS3
+                                                                             data, which holds share-alike and
+                                                                             non-commercial parts
+  Voice print for the voice gate: SpeechBrain spkrec-ecapa-voxceleb         Apache 2.0 (the weights); trained on
+  (revision 0f99f2d0), exported with its front end by tools/export_ecapa.py   VoxCeleb 1 and 2 (see below)
+
+Sources for the model licences:
+
+  TitaNet small: https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small
+                 https://github.com/NVIDIA/NeMo/blob/main/LICENSE
+  GTCRN:         https://github.com/Xiaobin-Rong/gtcrn
+  VoxCeleb:      https://mm.kaist.ac.kr/datasets/voxceleb/
+                 https://www.robots.ox.ac.uk/~vgg/data/voxceleb/vox1.html
+
+VoxCeleb, as its publishers state it: the audio is "available to download for research purposes under a Creative
+Commons Attribution 4.0 International License. The copyright remains with the original owners of the video" (KAIST);
+the metadata "is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License" (Oxford).
 
 FireRedChat pVAD's NOTICE, as its authors ship it:
 

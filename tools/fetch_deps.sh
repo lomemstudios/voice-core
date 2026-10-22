@@ -2,7 +2,8 @@
 # fetch_deps.sh: puts the third-party libraries that are on no public Maven repository into a local Maven directory,
 # pinned by SHA-256: VOICE_CORE_DEPS, else ~/.cache/voice-core/deps. Never into the repo.
 #
-#   sherpa-onnx 1.13.8 (k2-fsa, Apache 2.0), the Android AAR with ONNX Runtime (MIT) linked in, republished unchanged
+#   sherpa-onnx 1.13.8 (k2-fsa, Apache 2.0; the AAR also holds GPL-3.0 eSpeak NG and piper-phonemize, NOTICE), the
+#   Android AAR with ONNX Runtime 1.28.2 (MIT) linked in, republished unchanged
 #   as com.lomemstudios.voice.deps:sherpa-onnx-static-link-onnxruntime:1.13.8
 #
 # A consumer that builds voice-core from a checkout (Claude Voice Next with VOICE_CORE_DIR) reads the same directory.
