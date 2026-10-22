@@ -76,6 +76,15 @@ and the decisions taken.
   the automatic order while it is listed, whatever its type or the Bluetooth setting, never the earpiece; when it is not listed the order decides. The app keeps
   the pick by its own key and resolves it to an id at each choice; a change is applied with `chooseRoute`, never by
   restarting the session. `VoiceEngine.inputDevice` is the recording's routed microphone, for the screens.
+- A media output (0.2.3, Claude Voice's two audio choices, Petros, 22 October): with this phone's microphone the user
+  may want the answers on a device at full quality (earbuds as music, A2DP). `VoiceEngine(mediaOutput = …)` gives that
+  output's id in `getDevices(GET_DEVICES_OUTPUTS)`, and `CallRoute.choose(mediaOutput = …)` then returns a media route
+  to it (`Route.output`) over every call route: normal mode, no communication device, the recognition microphone kept
+  on the phone's own (`setPreferredDevice`), never a headset's. The app points its players at
+  `VoiceEngine.outputDevice` and plays with `playUsage()`, `USAGE_MEDIA` there (`CallPlayer.usage(call, media)`). The
+  app passes a media output only while its user keeps the phone's microphone: Android opens a Bluetooth or wired
+  microphone only in call mode, which plays on that same device. Another media output is another route
+  (`Route.sameAs` compares it) and is applied without restarting the recording.
 
 ## The detector is the reference
 

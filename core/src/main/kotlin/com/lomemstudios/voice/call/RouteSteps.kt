@@ -35,13 +35,17 @@ object RouteSteps {
 }
 
 /** How everything a session plays is marked, so it goes the session's way: as call audio, which the platform's echo
- *  canceller hears, or as media on the old path. */
+ *  canceller hears, as media on a media output the user picked ([media], 0.2.3), or as the assistant on the old path. */
 object CallPlayer {
-    fun usage(call: Boolean): Int = if (call) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANT
+    fun usage(call: Boolean, media: Boolean = false): Int = when {
+        call -> AudioAttributes.USAGE_VOICE_COMMUNICATION
+        media -> AudioAttributes.USAGE_MEDIA
+        else -> AudioAttributes.USAGE_ASSISTANT
+    }
 
     /** The stream for a ToneGenerator. */
     fun toneStream(call: Boolean): Int = if (call) AudioManager.STREAM_VOICE_CALL else AudioManager.STREAM_MUSIC
 
-    fun attributes(call: Boolean, contentType: Int): AudioAttributes =
-        AudioAttributes.Builder().setUsage(usage(call)).setContentType(contentType).build()
+    fun attributes(call: Boolean, contentType: Int, media: Boolean = false): AudioAttributes =
+        AudioAttributes.Builder().setUsage(usage(call, media)).setContentType(contentType).build()
 }

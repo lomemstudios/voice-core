@@ -10,6 +10,12 @@
 // over that order while it is listed, and the order decides again when it is not; the earpiece is never taken, picked
 // or not. With call audio off, the old path: media playback and the recognition
 // microphone on the speaker, and headset mode only for Bluetooth, whose microphone opens only on the call link.
+//
+// A media output (0.2.3, Claude Voice's two audio choices, 22 October): when the app's user keeps this phone's
+// microphone and wants the answers on a device at full quality (earbuds as music, A2DP), the app passes that output and
+// the route is media to it: normal mode, no communication device, the recognition microphone on the phone, and
+// everything played as media pointed at that output (VoiceEngine.outputDevice). Android allows no call link then: a
+// device's microphone opens only in call mode, which plays on that same device.
 
 package com.lomemstudios.voice.call
 
@@ -25,17 +31,20 @@ import android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET
 /** A communication device as AudioManager lists it: its id, AudioDeviceInfo type and product name. */
 data class AudioOut(val id: Int, val type: Int, val name: String)
 
-/** The chosen device, or null for the media path; [call]: communication mode and the call microphone. */
-data class Route(val device: AudioOut?, val call: Boolean) {
+/** The chosen device, or null for the media path; [call]: communication mode and the call microphone; [output]: on
+ *  the media path, the device answers play on (null: the platform's choice for media). */
+data class Route(val device: AudioOut?, val call: Boolean, val output: AudioOut? = null) {
     /** For the screen and the log: "Speaker", or the headset's or car's name. */
     val label: String get() = when {
+        output != null -> "${output.name.ifBlank { "Headphones" }} (media)"
         device == null -> "Speaker (media)"
         device.type == TYPE_BUILTIN_SPEAKER -> "Speaker"
         else -> device.name.ifBlank { "Headset" }
     }
     val bluetooth: Boolean get() = device != null && device.type in CallRoute.BLUETOOTH
 
-    fun sameAs(other: Route?): Boolean = other != null && call == other.call && device?.id == other.device?.id
+    fun sameAs(other: Route?): Boolean = other != null && call == other.call && device?.id == other.device?.id &&
+        output?.id == other.output?.id
 }
 
 object CallRoute {
@@ -44,8 +53,12 @@ object CallRoute {
     private val ORDER = HEADSETS + listOf(TYPE_BLE_HEADSET, TYPE_BLUETOOTH_SCO, TYPE_HEARING_AID, TYPE_BUILTIN_SPEAKER)
 
     /** [preferredId]: the device the user picked, by its id in [available]; it wins while it is listed, whatever its
-     *  type and the Bluetooth setting, except the earpiece. */
-    fun choose(available: List<AudioOut>, useBluetooth: Boolean, callAudio: Boolean, preferredId: Int? = null): Route {
+     *  type and the Bluetooth setting, except the earpiece. [mediaOutput]: an output the app wants the answers on as
+     *  media, with this phone's microphone; it wins over every call route, and the app passes it only when its user
+     *  keeps the phone's microphone. */
+    fun choose(available: List<AudioOut>, useBluetooth: Boolean, callAudio: Boolean, preferredId: Int? = null,
+               mediaOutput: AudioOut? = null): Route {
+        if (mediaOutput != null && mediaOutput.type != TYPE_BUILTIN_EARPIECE) return Route(null, call = false, output = mediaOutput)
         val picked = preferredId?.let { id -> available.firstOrNull { it.id == id && it.type != TYPE_BUILTIN_EARPIECE } }
         val allowed = available.filter { it.type in ORDER && (useBluetooth || it.type !in BLUETOOTH) }
         val best = picked ?: allowed.minByOrNull { ORDER.indexOf(it.type) } ?: return Route(null, call = false)

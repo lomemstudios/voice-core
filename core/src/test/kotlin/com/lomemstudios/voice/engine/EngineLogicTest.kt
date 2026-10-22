@@ -25,6 +25,19 @@ class EngineLogicTest {
     private val car = AudioOut(40, TYPE_BLUETOOTH_SCO, "Car Multimedia")
 
     @Test
+    fun anotherMediaOutputKeepsTheRecordingAndPlaysAsMedia() {
+        val buds = AudioOut(51, 8, "Redmi Buds 4")
+        val other = AudioOut(52, 8, "Pixel Buds")
+        val onBuds = Route(null, call = false, output = buds)
+        assertEquals(RouteAction.KEEP, RouteSteps.action(onBuds, Route(null, call = false, output = buds), recording = true, force = false))
+        assertEquals(RouteAction.APPLY, RouteSteps.action(onBuds, Route(null, call = false, output = other), recording = true, force = false))
+        assertEquals(RouteAction.APPLY_AND_RESTART, RouteSteps.action(Route(speaker, call = true), onBuds, recording = true, force = false))
+        assertEquals(AudioAttributes.USAGE_MEDIA, CallPlayer.usage(call = false, media = true))
+        assertEquals(AudioAttributes.USAGE_ASSISTANT, CallPlayer.usage(call = false))
+        assertEquals(AudioAttributes.USAGE_VOICE_COMMUNICATION, CallPlayer.usage(call = true, media = true))
+    }
+
+    @Test
     fun theSameRouteWhileRecordingChangesNothing() {
         val r = Route(speaker, call = true)
         assertEquals(RouteAction.KEEP, RouteSteps.action(r, Route(speaker, call = true), recording = true, force = false))

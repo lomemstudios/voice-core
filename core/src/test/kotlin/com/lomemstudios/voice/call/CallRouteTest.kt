@@ -25,6 +25,22 @@ class CallRouteTest {
     private val wired = AudioOut(43, TYPE_WIRED_HEADSET, "USB-C headset")
 
     @Test
+    fun aMediaOutputRunsAsMediaOverEveryCallRoute() {
+        // 0.2.3: this phone's microphone with the answers on the earbuds as music (A2DP, type 8, its own id): no call
+        // device, normal mode, even with the earbuds' hands-free link listed and picked.
+        val music = AudioOut(51, 8, "Redmi Buds 4")
+        val r = CallRoute.choose(listOf(earpiece, speaker, earbuds), useBluetooth = true, callAudio = true,
+            preferredId = earbuds.id, mediaOutput = music)
+        assertNull(r.device)
+        assertFalse(r.call)
+        assertEquals(music, r.output)
+        assertEquals("Redmi Buds 4 (media)", r.label)
+        assertFalse(r.sameAs(Route(null, call = false)))
+        // Without one, the call route as before.
+        assertEquals(earbuds, CallRoute.choose(listOf(earpiece, speaker, earbuds), useBluetooth = true, callAudio = true).device)
+    }
+
+    @Test
     fun nothingConnectedIsTheSpeakerNeverTheEarpiece() {
         val r = CallRoute.choose(listOf(earpiece, speaker), useBluetooth = true, callAudio = true)
         assertEquals(speaker, r.device)

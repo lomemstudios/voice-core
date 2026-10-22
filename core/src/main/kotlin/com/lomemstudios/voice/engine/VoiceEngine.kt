@@ -8,6 +8,10 @@
 // with the device, and the recording restarts only when the call mode itself changes or the microphone did not
 // follow. The normal audio mode comes back with restoreAudioMode().
 //
+// A media output (0.2.3): with this phone's microphone the app may want the answers on a device at full quality
+// (`mediaOutput`). The route is then media: normal mode, no communication device, the recognition microphone kept on
+// the phone (never a headset's), and the app points its players at [outputDevice] with [playUsage] (media).
+//
 // The microphone is read 50 ms at a time on the "audio" thread. Each frame goes to every tap (FrameFanOut: the
 // recognizer pipe, later the voice gate, each on its own thread with its own bounded queue) and, with its level, to
 // the listener on the main thread, where the app's turn detector runs.
@@ -57,6 +61,9 @@ class VoiceEngine(
     /** Settings, read at each choice: the id in availableCommunicationDevices of the device the user picked, which
      *  wins while it is listed; null for the automatic order. */
     private val preferredDevice: () -> Int? = { null },
+    /** Settings, read at each choice: the id in the outputs (getDevices(GET_DEVICES_OUTPUTS)) of a device the answers
+     *  play on as media, with this phone's microphone; null for none. It wins over every call route while listed. */
+    private val mediaOutput: () -> Int? = { null },
 ) {
     companion object {
         const val RATE = 16000
@@ -92,10 +99,19 @@ class VoiceEngine(
     fun tap(name: String, capacity: Int, accept: () -> Boolean = { true }, onClose: () -> Unit = {},
             consumer: (ShortArray) -> Unit): FrameFanOut.Tap = fanOut.tap(name, capacity, accept, onClose, consumer)
 
-    /** The usage everything the app plays carries now (CallPlayer). */
-    fun playUsage(): Int = CallPlayer.usage(call)
+    /** On a media output: true. */
+    val media: Boolean get() = route?.output != null
 
-    fun attributes(contentType: Int): AudioAttributes = CallPlayer.attributes(call, contentType)
+    /** The usage everything the app plays carries now (CallPlayer). */
+    fun playUsage(): Int = CallPlayer.usage(call, media)
+
+    fun attributes(contentType: Int): AudioAttributes = CallPlayer.attributes(call, contentType, media)
+
+    /** The device the app's players point at (setPreferredDevice): the media output; null on the call path, where the
+     *  communication device decides, and on the old media path. */
+    val outputDevice: AudioDeviceInfo? get() = route?.output?.let { out ->
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id == out.id }
+    }
 
     /** Opens the session's audio: follows devices, chooses the route and starts the microphone. Main thread. */
     fun start() {
@@ -122,14 +138,18 @@ class VoiceEngine(
     /** Chooses the route now and applies it when it changed, or always with [force]. */
     fun chooseRoute(why: String, force: Boolean = false) {
         if (!running) return
+        val media = mediaOutput()?.let { id ->
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id == id }
+                ?.let { AudioOut(it.id, it.type, it.productName?.toString() ?: "") }
+        }
         val next = CallRoute.choose(communicationDevices(), useBluetooth = useBluetooth(), callAudio = callAudio(),
-            preferredId = preferredDevice())
+            preferredId = preferredDevice(), mediaOutput = media)
         val action = RouteSteps.action(route, next, recording = record != null, force = force)
         if (action == RouteAction.KEEP) return
         applyRoute(next)
         route = next
         // The mode as the system has it, not as asked: without MODIFY_AUDIO_SETTINGS setMode is refused silently.
-        log("route: ${next.label}, ${if (next.call) "call audio" else "media"}, mode ${modeName(audioManager.mode)} ($why)")
+        log("route: ${next.label}, ${if (next.call) "call audio" else if (next.output != null) "media to type ${next.output.type}" else "media"}, mode ${modeName(audioManager.mode)} ($why)")
         listener.onRoute(next)
         if (action == RouteAction.APPLY_AND_RESTART) {
             stopAudio()
@@ -171,7 +191,8 @@ class VoiceEngine(
     private fun verifyRoute(expected: Route) {
         if (!running || !expected.sameAs(route)) return
         val out = expected.device ?: run {
-            log("recording from ${record?.routedDevice?.productName ?: "unknown"} (media path)")
+            val to = expected.output?.let { ", answers to type ${it.type}" } ?: ""
+            log("recording from ${record?.routedDevice?.productName ?: "unknown"} (type ${record?.routedDevice?.type ?: -1}, media path$to)")
             return
         }
         val routed = record?.routedDevice
@@ -244,6 +265,9 @@ class VoiceEngine(
                 audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type == want }?.let { rec.setPreferredDevice(it) }
             }
         }
+        // On a media output the microphone is this phone's own, never a wired headset's.
+        if (route?.output != null) audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }?.let { rec.setPreferredDevice(it) }
         record = rec
         rec.startRecording()
         val generation = ++audioGeneration
