@@ -1,0 +1,5 @@
+{
+  "about": "Another voice talks on after the user stops: it holds the turn until the words are still.",
+  "steps": [{"user": 1.5}, {"say": "check the build"}, {"other": 4.0}],
+  "expect": {"text": "check the build", "endedBy": "words still", "endsAfter": 1.9}
+}

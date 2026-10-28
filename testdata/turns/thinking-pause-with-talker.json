@@ -1,0 +1,5 @@
+{
+  "about": "The user stops on a word that expects more while someone else talks: the turn ends when the words have been still for the longer time such a word earns.",
+  "steps": [{"user": 1.5}, {"say": "check the build and"}, {"other": 5.0}],
+  "expect": {"text": "check the build and", "endedBy": "words still", "endsAfter": 2.9}
+}

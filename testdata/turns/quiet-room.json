@@ -1,0 +1,5 @@
+{
+  "about": "In a quiet room the silence ends the turn.",
+  "steps": [{"user": 1.5}, {"say": "check the build"}, {"quiet": 2.0}],
+  "expect": {"text": "check the build", "endedBy": "silence", "endsWithin": 1.1}
+}

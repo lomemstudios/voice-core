@@ -1,0 +1,10 @@
+voice-core
+Copyright 2026 Petros Makris
+
+Licensed under the Apache License, Version 2.0 (LICENSE).
+
+The library carries no third-party code, runtime or model since 0.3.0 (the speaker models, ONNX Runtime and
+sherpa-onnx were removed). Its tests use the following, which no release carries:
+
+  org.json 20260814 (tests only)                                             Public Domain
+  JUnit 4.13.2 (tests only)                                                  Eclipse Public License 1.0

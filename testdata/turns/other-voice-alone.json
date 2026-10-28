@@ -1,0 +1,5 @@
+{
+  "about": "Only another voice talks: the detector cannot tell voices apart, so its words make a turn that ends on the silence after them.",
+  "steps": [{"other": 0.6}, {"say": "turn"}, {"other": 0.6}, {"say": "turn the radio"}, {"other": 0.6}, {"say": "turn the radio up"}, {"quiet": 2.0}],
+  "expect": {"text": "turn the radio up", "endedBy": "silence"}
+}
