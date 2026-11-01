@@ -1,4 +1,4 @@
-// The turn scenarios Voice Next and the Lo Mem apps rely on (testdata/turns/*.json, CLAUDE.md "The detector is the
+// The turn scenarios Claude Voice and the Lo Mem apps rely on (testdata/turns/*.json, CLAUDE.md "The detector is the
 // reference").
 
 package com.lomemstudios.voice.turn

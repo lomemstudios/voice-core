@@ -8,7 +8,7 @@ android {
     namespace = "com.lomemstudios.voice"
     compileSdk = 36
     defaultConfig {
-        // Low enough for an Expo app; Claude Voice Next itself needs 33.
+        // Low enough for an Expo app; Claude Voice needs 33.
         minSdk = 24
     }
     publishing {

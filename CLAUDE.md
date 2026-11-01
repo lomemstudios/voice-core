@@ -1,6 +1,6 @@
 # voice-core — Claude instructions
 
-The Android voice core shared by Claude Voice Next (claude-voice, branch `agent-sdk-streaming`, `next` flavor) and the
+The Android voice core shared by Claude Voice (claude-voice, branch `agent-sdk-streaming`, `personal` flavor) and the
 Lo Mem apps (through lomem's `packages/voice-native` Expo module, from plan Phase 4). `README.md` says what it is; these
 are the rules. The plan that drives it is claude-voice's `docs/voice-gate-plan.md`; `PROGRESS.md` here says what is done
 and the decisions taken.
@@ -16,7 +16,7 @@ and the decisions taken.
 - No model and no model runtime since 0.3.0 (Petros, 28 October: the speaker models did not work on short audio and
   were removed, "Super big cleanup"). A model brought back is never committed: pinned by SHA-256 and fetched.
 - `tools/check_public.sh` fails on any of these in the tracked tree. Run it before every commit that adds files; CI runs it.
-- No test here needs a recording since 0.3.0 (the ones that read `VOICE_BENCH_DIR` went with the gate). Voice Next's
+- No test here needs a recording since 0.3.0 (the ones that read `VOICE_BENCH_DIR` went with the gate). Claude Voice's
   `FerryAudioTest`, which plays the ferry recordings
   through this detector, stays in claude-voice with the recordings.
 
@@ -45,10 +45,10 @@ and the decisions taken.
 - `setMode(MODE_IN_COMMUNICATION)` needs `MODIFY_AUDIO_SETTINGS`, a normal permission granted at install with no
   prompt. `core`'s own manifest declares it (0.2.2, 21 October), so every app that uses `VoiceEngine` gets it through
   the manifest merge. Before 0.2.2 no manifest declared it and Android refused the mode with only a logcat warning
-  (`Audio Settings Permission Denial: setMode()`): Voice Next's call path ran in `MODE_NORMAL` from its version 10 to
+  (`Audio Settings Permission Denial: setMode()`): Claude Voice's call path ran in `MODE_NORMAL` from its version 10 to
   25 (checked on the emulator, 21 October). The `route:` log line reads the mode back from the system ("mode in
   communication"), and a refused mode logs "Android refused communication mode".
-- A device the user picks (0.2.1, Claude Voice Next's Audio page, 20 October): `VoiceEngine(preferredDevice = …)` gives
+- A device the user picks (0.2.1, Claude Voice's Audio page, 20 October): `VoiceEngine(preferredDevice = …)` gives
   the id in `availableCommunicationDevices` of the picked device, and `CallRoute.choose(preferredId = …)` takes it over
   the automatic order while it is listed, whatever its type or the Bluetooth setting, never the earpiece; when it is not listed the order decides. The app keeps
   the pick by its own key and resolves it to an id at each choice; a change is applied with `chooseRoute`, never by
@@ -68,11 +68,11 @@ and the decisions taken.
 - `turn/TurnDetector.kt` is the reference turn detector. Claude Voice's Swift `TurnCore` (claude-voice,
   `listener/Sources/TurnCore`) is ported line for line from it: a change here goes there too, checked with
   `swift run turn-check` on the Mac. lomem's TypeScript detector gets no parity work.
-- A change to the detector keeps Voice Next's `FerryAudioTest` passing. Run it from claude-voice's `android/` with
-  `VOICE_CORE_DIR=~/projects/voice-core ./gradlew testNextDebugUnitTest`.
+- A change to the detector keeps Claude Voice's `FerryAudioTest` passing. Run it from claude-voice's `android/` with
+  `VOICE_CORE_DIR=~/projects/voice-core ./gradlew testPersonalDebugUnitTest`.
 - A check that guards a fix must fail with the fix removed: paste both runs. The timeline in `TurnDetectorTest` has a
   recognizer `lag`, because one that answers at once hides timing bugs.
-- The scenarios Voice Next and the Lo Mem apps rely on go into `testdata/turns/*.json` (`TurnScenarioTest`).
+- The scenarios Claude Voice and the Lo Mem apps rely on go into `testdata/turns/*.json` (`TurnScenarioTest`).
 - The detector has no voice gate since 0.3.0: it never tells voices apart, and another voice's sound and words hold a
   turn open as the user's do (`talker-after-user.json`). Claude Voice filters another person's stray words with the
   server's judgement of the words, not by audio.
@@ -82,7 +82,7 @@ and the decisions taken.
 - Java 21 and the Android SDK. On main: `JAVA_HOME=$HOME/.local/jdk-21 ANDROID_HOME=$HOME/Android/Sdk`; on the Mac:
   `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home` and the SDK in `~/Library/Android/sdk`.
 - `./gradlew test assembleRelease`. No third-party library to fetch since 0.3.0.
-- The Android Gradle Plugin version (9.4.1) and Gradle (9.8.1) match claude-voice's `android/` build: Voice Next
+- The Android Gradle Plugin version (9.4.1) and Gradle (9.8.1) match claude-voice's `android/` build: Claude Voice
   includes this build, and change them together. AGP 9 builds Kotlin itself; do not apply the Kotlin plugin.
 - Without the Android SDK, the detector's tests run with a standalone Kotlin compiler and JUnit (not run since the
   move; main has the SDK now): compile `core/src/main/kotlin/com/lomemstudios/voice/turn/TurnDetector.kt` and
@@ -99,7 +99,7 @@ and the decisions taken.
 - Publishing is Petros's step, never Claude's without his go: push `main`, tag, then
   `gh release create v<version> build/release/voice-core-<version>-maven.zip`. The repository is
   github.com/lomemstudios/voice-core (public); v0.1.0 is released, and v0.2.0 (20 October, SHA-256 `c9d1e2f2…`,
-  published by Claude on the voice gate build's brief from Petros). v0.2.1 (20 October, SHA-256 `6cf0b592…`: the picked device in `CallRoute.choose(preferredId)` and `VoiceEngine(preferredDevice)`, `VoiceEngine.inputDevice`; no model changes), published by Claude on the UX round two brief from Petros. v0.2.2 (21 October, SHA-256 `2f60d8c7…`: `MODIFY_AUDIO_SETTINGS` in core's manifest, the mode read back in the `route:` line; no model changes), published by Claude on Petros's brief for Voice Next's call mode. v0.2.3 (22 October, SHA-256 `26ec6545…`: the media output, `Route.output`, `VoiceEngine(mediaOutput)`, `VoiceEngine.outputDevice` and `media`, `CallPlayer.usage(call, media)`; it also carries the NOTICE and ModelManifest licence corrections of ae456ae; no model changes), published by Claude on Petros's brief for the two audio choices. v0.2.4 (26 October, SHA-256 `d3a846dd…`: `VoicePrint.scoreSpeech` and `speechOf`, the turn check on its speech only; `SpeakerCheck.floor` 0.25 and `needed`; `MicKind`; no model changes), published by Claude on Petros's brief for Claude Voice's simpler voice design ("go ahead, full permissions granted"). v0.2.5 (26 October, SHA-256 `79acd3ce…`: `WordVoice`, `WordColour`, `WordRules`, `IslandCutter`, `Island`, `VoicePrint.vector`; no model changes), published by Claude on Petros's brief for Claude Voice's live word colours ("release voice-core 0.2.5 the way 0.2.4 was released"). v0.3.0 (28 October, SHA-256 `add87e42…`: the speaker models and everything only they used removed, see "What each module owns"; `TurnDetector` without the gate's inputs, behaviour unchanged without a gate; the `sherpa` module and ONNX Runtime gone, so the zip holds `core` alone; Claude Voice Next 0.61's cleanup), built and committed by Claude, published by the job's lead.
-- Each consumer pins one version and its SHA-256, and upgrading is a commit there. Voice Next: `voiceCoreVersion` in
+  published by Claude on the voice gate build's brief from Petros). v0.2.1 (20 October, SHA-256 `6cf0b592…`: the picked device in `CallRoute.choose(preferredId)` and `VoiceEngine(preferredDevice)`, `VoiceEngine.inputDevice`; no model changes), published by Claude on the UX round two brief from Petros. v0.2.2 (21 October, SHA-256 `2f60d8c7…`: `MODIFY_AUDIO_SETTINGS` in core's manifest, the mode read back in the `route:` line; no model changes), published by Claude on Petros's brief for Claude Voice's call mode. v0.2.3 (22 October, SHA-256 `26ec6545…`: the media output, `Route.output`, `VoiceEngine(mediaOutput)`, `VoiceEngine.outputDevice` and `media`, `CallPlayer.usage(call, media)`; it also carries the NOTICE and ModelManifest licence corrections of ae456ae; no model changes), published by Claude on Petros's brief for the two audio choices. v0.2.4 (26 October, SHA-256 `d3a846dd…`: `VoicePrint.scoreSpeech` and `speechOf`, the turn check on its speech only; `SpeakerCheck.floor` 0.25 and `needed`; `MicKind`; no model changes), published by Claude on Petros's brief for Claude Voice's simpler voice design ("go ahead, full permissions granted"). v0.2.5 (26 October, SHA-256 `79acd3ce…`: `WordVoice`, `WordColour`, `WordRules`, `IslandCutter`, `Island`, `VoicePrint.vector`; no model changes), published by Claude on Petros's brief for Claude Voice's live word colours ("release voice-core 0.2.5 the way 0.2.4 was released"). v0.3.0 (28 October, SHA-256 `add87e42…`: the speaker models and everything only they used removed, see "What each module owns"; `TurnDetector` without the gate's inputs, behaviour unchanged without a gate; the `sherpa` module and ONNX Runtime gone, so the zip holds `core` alone; Claude Voice 0.61's cleanup), built and committed by Claude, published by the job's lead.
+- Each consumer pins one version and its SHA-256, and upgrading is a commit there. Claude Voice: `voiceCoreVersion` in
   `android/app/build.gradle.kts`, and `voice_core_version`, `voice_core_repo` and `voice_core_sha256` in
   `android/tools/fetch_voiceprint.sh`. lomem: `packages/voice-native` (Phase 4).

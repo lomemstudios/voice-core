@@ -1,4 +1,4 @@
-// voice-core: the Android voice core shared by Claude Voice Next and the Lo Mem apps (CLAUDE.md).
+// voice-core: the Android voice core shared by Claude Voice and the Lo Mem apps (CLAUDE.md).
 pluginManagement {
     repositories {
         google()

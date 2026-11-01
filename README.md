@@ -1,6 +1,6 @@
 # voice-core keeps an Android voice app's turn taking and call audio in one tested library
 
-voice-core is the Android voice layer shared by Claude Voice Next and the Lo Mem apps. It decides when a spoken turn
+voice-core is the Android voice layer shared by Claude Voice and the Lo Mem apps. It decides when a spoken turn
 starts and ends, and picks where a voice session's audio goes so the platform echo canceller hears the answers.
 Screens, sounds, the recognizer and the server protocol stay in each app.
 
