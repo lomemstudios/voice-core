@@ -116,16 +116,15 @@ class VoiceEngine(
     /** Opens the session's audio: follows devices, chooses the route and starts the microphone. Main thread. */
     fun start() {
         running = true
-        audioManager.registerAudioDeviceCallback(deviceCallback, main)
-        audioManager.addOnCommunicationDeviceChangedListener(mainExecutor, communicationListener)
+        callbacks.add()
         chooseRoute("start")
     }
 
-    /** Stops the microphone and every tap; the audio mode stays until [restoreAudioMode]. Main thread. */
+    /** Stops the microphone and every tap; the audio mode stays until [restoreAudioMode]. Main thread. Safe before
+     *  [start] and a second time: it removes only the callbacks a start added. */
     fun stop() {
         running = false
-        audioManager.unregisterAudioDeviceCallback(deviceCallback)
-        audioManager.removeOnCommunicationDeviceChangedListener(communicationListener)
+        callbacks.remove()
         stopAudio()
         fanOut.close()
     }
@@ -239,6 +238,19 @@ class VoiceEngine(
         if (running && call && out != null && device?.id != out.id) main.postDelayed({ takeBack() }, 1000)
     }
 
+    /** The two callbacks above, added at most once. Android throws when a listener is removed that was never added
+     *  (stop() before start(), or twice: Claude Voice's crash of 6 November) or added a second time. */
+    private val callbacks = Callbacks(
+        adds = {
+            audioManager.registerAudioDeviceCallback(deviceCallback, main)
+            audioManager.addOnCommunicationDeviceChangedListener(mainExecutor, communicationListener)
+        },
+        removes = {
+            audioManager.unregisterAudioDeviceCallback(deviceCallback)
+            audioManager.removeOnCommunicationDeviceChangedListener(communicationListener)
+        },
+    )
+
     private fun takeBack() {
         val out = route?.device ?: return
         if (!running || !call || audioManager.communicationDevice?.id == out.id) return
@@ -312,6 +324,24 @@ class VoiceEngine(
         aec = null
         ns = null
         rec.release()
+    }
+}
+
+/** Callbacks that are added once and removed once: a second add, or a remove with nothing added, does nothing. */
+internal class Callbacks(private val adds: () -> Unit, private val removes: () -> Unit) {
+    var added = false
+        private set
+
+    fun add() {
+        if (added) return
+        adds()
+        added = true
+    }
+
+    fun remove() {
+        if (!added) return
+        added = false
+        removes()
     }
 }
 

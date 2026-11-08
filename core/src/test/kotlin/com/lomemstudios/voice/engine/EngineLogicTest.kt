@@ -123,6 +123,26 @@ class EngineLogicTest {
     }
 
     @Test
+    fun stopBeforeStartOrTwiceRemovesNothingAndStartTwiceAddsOnce() {
+        // Android's own rule: removing a listener that is not added, or adding one twice, throws
+        // (Claude Voice's crash of 6 November: "removeOnCommunicationDeviceChangedListener on an unregistered listener").
+        val platform = mutableListOf<String>()
+        var on = false
+        val callbacks = Callbacks(
+            adds = { require(!on) { "added twice" }; on = true; platform += "add" },
+            removes = { require(on) { "removed while not added" }; on = false; platform += "remove" },
+        )
+        callbacks.remove()          // stop() before any start()
+        callbacks.add()             // start()
+        callbacks.add()             // start() again while running
+        callbacks.remove()          // stop()
+        callbacks.remove()          // stop() again: the service's onDestroy after a stop for a call
+        callbacks.add()             // a start after a stop adds them again
+        assertEquals(listOf("add", "remove", "add"), platform)
+        assertTrue(callbacks.added)
+    }
+
+    @Test
     fun levelsAreDbBelowFullScale() {
         assertEquals(-100f, levelDB(ShortArray(800)), 0.01f)
         assertEquals(0f, levelDB(ShortArray(800) { if (it % 2 == 0) Short.MIN_VALUE else Short.MIN_VALUE }), 0.01f)
