@@ -9,8 +9,18 @@
 // Sound alone cannot end a turn in noise: a squeak above the margin every 50 ms keeps it open. So a turn with words
 // also ends when its words have not changed for wordsStill (longer after a word that expects more), whatever the
 // level, and no turn stays open past maxTurn.
+//
+// 0.4.0 adds a second way to hear speech, used only when the app gives the detector a SpeechProbability and its
+// frames (audio(frame, …)): a turn starts on a quarter second of speech, and its silence counts the frames the speech
+// detector calls non-speech, so soft words keep it open and a door slam or a cough opens none. Speech that is not the
+// person's (a car radio, a passenger) would then hold a turn open, and the app may run no recognizer, so words cannot
+// end it: the fallback ends a turn once its own voice (sound above half the margin, within voiceDropDB of the turn's
+// voice) has been gone for its silence plus fallbackSilence. Without a speech detector the energy rules above run as
+// in 0.3.1, which is what Claude Voice's Swift port matches.
 
 package com.lomemstudios.voice.turn
+
+import com.lomemstudios.voice.audio.PreRoll
 
 class TurnConfig {
     /** Silence that ends a turn whose words look finished. */
@@ -56,6 +66,53 @@ class TurnConfig {
     var wordsEndPad = 1.0
     /** No turn stays open longer: with words it ends, without it is dropped. */
     var maxTurn = 60.0
+
+    // ---- 0.4.0. Each of these acts only when the app uses the part it belongs to; the defaults keep 0.3.1. ----
+
+    /** The noise floor does not rise while a turn is open (it may still drop). Off by default: long dense speech can
+     *  lift the floor until the turn's soft last words count as silence (testdata/turns/loud-turn-ends-softly*.json). */
+    var freezeFloorInTurn = false
+    /** With a [SpeechProbability]: a frame is speech when its probability is at least this. */
+    var speechThreshold = 0.5f
+    /** With a [SpeechProbability]: speech this long starts a turn (each frame also above half the margin). */
+    var speechStart = 0.25
+    /** With a [SpeechProbability], the fallback: a turn whose own voice (sound above half the margin and within
+     *  [voiceDropDB] of the turn's voice) has been gone for its silence plus this much ends, even while the detector
+     *  still hears speech (a car radio, a passenger, the navigation voice). */
+    var fallbackSilence = 3.0
+    /** With a [SpeechProbability]: sound this far under the turn's voice (its voiced frames' 75th percentile) is not
+     *  the person's own voice, for the fallback. */
+    var voiceDropDB = 15f
+    /** With a [SpeechProbability], while [TurnDetector.playing]: confident speech this long raises a barge-in from
+     *  sound ([TurnEvent.BargeIn] with bySound). */
+    var bargeInSpeech = 0.3
+    /** The probability a frame needs to count toward a barge-in from sound. */
+    var bargeInProbability = 0.8f
+    /** The audio [TurnDetector.preRoll] keeps, in seconds, when the app gives the detector its frames. */
+    var preRollSeconds = 2.5
+}
+
+/** The chance, 0 to 1, that a frame of the microphone holds speech: Silero through sherpa-onnx in the app, for
+ *  example. Called once per frame on the thread that feeds the detector, with the frame the app gives
+ *  [TurnDetector.audio]; an implementation that needs other window sizes buffers inside. */
+fun interface SpeechProbability {
+    fun probability(frame: ShortArray): Float
+}
+
+/** The rule that ended or dropped a turn. */
+enum class EndCause {
+    /** Its silence: the pause after its last speech. */
+    SILENCE,
+    /** Its words had not changed for [TurnConfig.wordsStill]. */
+    STILL_WORDS,
+    /** With a [SpeechProbability]: its own voice was gone though speech went on ([TurnConfig.fallbackSilence]). */
+    FALLBACK,
+    /** It reached [TurnConfig.maxTurn]. */
+    MAX_TURN,
+    /** The app ended it with [TurnDetector.finish] (Mute). */
+    FLUSH,
+    /** Sound with no words held it for [TurnConfig.noWordsMaxHold] (energy only). */
+    NOISE,
 }
 
 sealed class TurnEvent {
@@ -63,19 +120,50 @@ sealed class TurnEvent {
     /** The sound has stopped: have the recognizer finish everything up to [through], then call caughtUp. */
     data class Flush(val through: Double) : TurnEvent()
     /** The speaker has finished. [start] and [end] bound the speech, to cut the recording. */
-    data class Ended(val text: String, val start: Double, val end: Double, val silence: Double) : TurnEvent()
+    data class Ended(val text: String, val start: Double, val end: Double, val silence: Double) : TurnEvent() {
+        /** Where the turn's speech ended (0.4.0). Outside equals and copy, so events compare as in 0.3.1. */
+        var speechEndAt: Double? = null
+            internal set
+        /** The rule that ended the turn (0.4.0). Outside equals and copy. */
+        var cause: EndCause? = null
+            internal set
+    }
     /** The speaker is cutting into the answer that is playing: stop it now. */
-    data class BargeIn(val text: String, val at: Double) : TurnEvent()
+    data class BargeIn(val text: String, val at: Double) : TurnEvent() {
+        /** With a [SpeechProbability] (0.4.0): raised from sound alone, before any words ([text] is empty). A candidate
+         *  the app may pause the answer on at once. Outside equals and copy. */
+        var bySound = false
+            internal set
+        /** With [bySound]: when the confident speech began. */
+        var speechFrom: Double? = null
+            internal set
+    }
     /** Sound or backchannel words that make no turn. */
-    data class Dropped(val text: String, val at: Double, val why: String = "") : TurnEvent()
+    data class Dropped(val text: String, val at: Double, val why: String = "") : TurnEvent() {
+        /** Where the dropped turn's sound or speech ended (0.4.0). Outside equals and copy. */
+        var speechEndAt: Double? = null
+            internal set
+        /** The rule that ended the turn (0.4.0). Outside equals and copy. */
+        var cause: EndCause? = null
+            internal set
+    }
     /** Words with no sound since the last turn ended: the recognizer's late words of that turn. The caller
      *  forgets them, so they do not start the next turn either. */
     data class LateWords(val text: String, val at: Double) : TurnEvent()
 }
 
 class TurnDetector(val config: TurnConfig = TurnConfig()) {
+    /** A detector with a speech detector (0.4.0): see [speech]. */
+    constructor(config: TurnConfig, speech: SpeechProbability?) : this(config) {
+        this.speech = speech
+    }
+
     /** Set by the caller while an answer is playing. */
     var playing = false
+
+    /** The speech detector (0.4.0). With one, and the frames given to [audio], a turn starts on speech and its silence
+     *  counts the frames it calls non-speech; null keeps the energy rules of 0.3.1. */
+    var speech: SpeechProbability? = null
 
     var noiseFloorDB = -60f
         private set
@@ -109,6 +197,27 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
     /** Whether the noise floor has been set from the first second of audio. */
     val floorSeeded get() = seeded >= config.floorSeedSeconds - 1e-9
 
+    /** One audio buffer and its loudness, at the buffer's end time (0.4.0): fills [preRoll], and with a [speech]
+     *  detector decides by speech. Without one it behaves as [audio] with the level alone. */
+    fun audio(frame: ShortArray, levelDB: Float, duration: Double, t: Double): List<TurnEvent> {
+        roll.add(frame, duration, t)
+        // Asked on every frame, the first second's too: a speech detector may keep state from frame to frame.
+        val p = speech?.probability(frame) ?: return audio(levelDB, duration, t)
+        if (!floorSeeded) {
+            seedNoiseFloor(levelDB, duration)
+            return emptyList()
+        }
+        trackNoiseFloor(levelDB, duration)
+        return bySpeech(levelDB, duration, t, p)
+    }
+
+    /** The last [TurnConfig.preRollSeconds] of the frames given to [audio], through the newest: read it when a turn
+     *  starts to keep the audio from before [TurnEvent.Started.at]. Empty when the app gives levels only. */
+    fun preRoll(): ShortArray = roll.read()
+
+    /** The time of [preRoll]'s first sample, on the clock the app passes to [audio]. */
+    val preRollFrom: Double get() = roll.from
+
     /** One audio buffer's loudness, at the buffer's end time. */
     fun audio(levelDB: Float, duration: Double, t: Double): List<TurnEvent> {
         if (!floorSeeded) {
@@ -141,7 +250,7 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             // Sound with no words for this long is noise the floor has not caught up with: the floor jumps to
             // the recent levels' middle, and the turn is dropped.
             noiseFloorDB = maxOf(noiseFloorDB, percentile(0.5))
-            return events + endTurn(t, "held by noise")
+            return events + endTurn(t, "held by noise", cause = EndCause.NOISE)
         }
         if (inTurn) {
             if (!flushed && t - lastSound >= config.flushAfter) {
@@ -150,13 +259,90 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             }
             events += checkEnd(t)
         }
-        if (inTurn && t - turnStart >= config.maxTurn - 1e-9) return events + endTurn(t, "", "cap", wordsEnd())
+        return events + capOrStill(t)
+    }
+
+    /** The two bounds every turn has, whatever ends it otherwise: [TurnConfig.maxTurn] and still words. */
+    private fun capOrStill(t: Double): List<TurnEvent> {
+        if (inTurn && t - turnStart >= config.maxTurn - 1e-9) return endTurn(t, "", "cap", wordsEnd(), EndCause.MAX_TURN)
         if (inTurn && text.isNotEmpty() && t - textChangedAt >= wordsStill(text) - 1e-9) {
             // The recognizer has had its words unchanged for seconds, far past the 400 ms that counts as caught up,
             // so nothing waits for caughtUp here.
-            return events + endTurn(t, "", "words still", wordsEnd())
+            return endTurn(t, "", "words still", wordsEnd(), EndCause.STILL_WORDS)
         }
-        return events
+        return emptyList()
+    }
+
+    /**
+     * One frame with the speech detector's probability [p] (0.4.0). A turn starts on [TurnConfig.speechStart] of
+     * speech whose sound is also above half the margin (so a radio under the floor does not open one), and its
+     * silence counts the frames the detector calls non-speech, soft words under the margin included. No-words noise
+     * ([TurnConfig.noWordsMaxHold]) is the speech detector's to judge here, so that rule is off.
+     */
+    private fun bySpeech(level: Float, duration: Double, t: Double, p: Float): List<TurnEvent> {
+        val events = mutableListOf<TurnEvent>()
+        if (inTurn) stats.peakDB = maxOf(stats.peakDB, level)
+        val isSpeech = p >= config.speechThreshold
+        // Half the margin up: sound that may be the person's own voice, as for the softer start of words.
+        val voiced = level > noiseFloorDB + marginDB / 2
+        if (isSpeech) {
+            soundSinceEnd = true
+            if (!soft) softFrom = t - duration
+            soft = true
+        } else {
+            soft = false
+        }
+        if (isSpeech && voiced) {
+            if (loudSince == null) loudSince = t - duration
+            val since = loudSince
+            if (!inTurn && since != null && t - since >= config.speechStart - 1e-9) events += start(since, "speech")
+        } else if (!inTurn) {
+            loudSince = null
+        }
+        if (inTurn && isSpeech) {
+            lastSound = t
+            flushed = false
+        }
+        if (inTurn && voiced) ownVoice(level, t)
+        // Barge-in from sound: confident speech while an answer plays, once a turn.
+        if (p >= config.bargeInProbability) {
+            if (confidentSince == null) confidentSince = t - duration
+            val since = confidentSince!!
+            if (playing && !soundBargedIn && t - since >= config.bargeInSpeech - 1e-9) {
+                soundBargedIn = true
+                events += TurnEvent.BargeIn(text, t).apply { bySound = true; speechFrom = since }
+            }
+        } else {
+            confidentSince = null
+        }
+        if (inTurn) {
+            if (!flushed && t - lastSound >= config.flushAfter) {
+                flushed = true
+                events += TurnEvent.Flush(t)
+            }
+            events += checkEnd(t)
+        }
+        // The fallback: speech goes on, but the person's own voice has been gone for the turn's silence and
+        // fallbackSilence more. From sound alone, so it holds with no recognizer; cut at the last own voice.
+        if (inTurn && t - lastVoice >= requiredSilence(text) + config.fallbackSilence - 1e-9)
+            return events + endTurn(t, "", "fallback", minOf(lastSound, lastVoice), EndCause.FALLBACK)
+        return events + capOrStill(t)
+    }
+
+    /** The turn's voiced frames, for its voice level: the person nearest the microphone is the loudest voice. */
+    private val voiceLevels = ArrayDeque<Float>()
+    private var lastVoice = 0.0
+    private var confidentSince: Double? = null
+    private var soundBargedIn = false
+    private val roll = PreRoll(config.preRollSeconds)
+
+    /** A voiced frame in a turn: the person's own voice unless it is [TurnConfig.voiceDropDB] under the turn's voice. */
+    private fun ownVoice(level: Float, t: Double) {
+        voiceLevels.addLast(level)
+        while (voiceLevels.size > 200) voiceLevels.removeFirst()
+        val sorted = voiceLevels.sorted()
+        val voice = sorted[((sorted.size - 1) * 0.75).toInt()]
+        if (level >= voice - config.voiceDropDB) lastVoice = t
     }
 
     /** The recognizer's words for this turn so far. */
@@ -194,7 +380,7 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
      */
     fun finish(t: Double): List<TurnEvent> {
         if (!inTurn) return emptyList()
-        val events = endTurn(t, "")
+        val events = endTurn(t, "", cause = EndCause.FLUSH)
         if (events.firstOrNull() is TurnEvent.Ended) stats.endedBy = "mute"
         return events
     }
@@ -222,6 +408,9 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         flushed = false
         text = ""
         bargedIn = false
+        lastVoice = t
+        voiceLevels.clear()
+        soundBargedIn = false
         return listOf(TurnEvent.Started(t))
     }
 
@@ -233,8 +422,9 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         return endTurn(t, "")
     }
 
-    /** [by] names what ended a turn that is sent; [end] is where its speech is cut. */
-    private fun endTurn(t: Double, why: String, by: String = "silence", end: Double = lastSound): List<TurnEvent> {
+    /** [by] names what ended a turn that is sent; [end] is where its speech is cut; [cause] is the rule. */
+    private fun endTurn(t: Double, why: String, by: String = "silence", end: Double = lastSound,
+                        cause: EndCause = EndCause.SILENCE): List<TurnEvent> {
         val silence = t - end
         inTurn = false
         loudSince = null
@@ -245,14 +435,14 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         stats.silenceS = silence
         if (why.isNotEmpty()) {
             stats.endedBy = why
-            return listOf(TurnEvent.Dropped(said, t, why))
+            return listOf(TurnEvent.Dropped(said, t, why).also { it.speechEndAt = end; it.cause = cause })
         }
         if (Words.list(said).isEmpty() || (Words.onlyBackchannel(said) && (playing || !Words.answersAQuestion(said)))) {
             stats.endedBy = if (said.isEmpty()) "no words" else "backchannel"
-            return listOf(TurnEvent.Dropped(said, t, stats.endedBy))
+            return listOf(TurnEvent.Dropped(said, t, stats.endedBy).also { it.speechEndAt = end; it.cause = cause })
         }
         stats.endedBy = by
-        return listOf(TurnEvent.Ended(said, turnStart, end, silence))
+        return listOf(TurnEvent.Ended(said, turnStart, end, silence).also { it.speechEndAt = end; it.cause = cause })
     }
 
     /**
@@ -282,7 +472,9 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
         recent.addLast(level)
         while (recent.size > recentCapacity) recent.removeFirst()
         val target = percentile(config.floorPercentile)
-        noiseFloorDB = if (target < noiseFloorDB) target else minOf(target, noiseFloorDB + config.floorRiseDBPerS * duration.toFloat())
+        noiseFloorDB = if (target < noiseFloorDB) target
+            else if (inTurn && config.freezeFloorInTurn) noiseFloorDB
+            else minOf(target, noiseFloorDB + config.floorRiseDBPerS * duration.toFloat())
         // The spread is measured only between turns, so speech does not widen it.
         if (inTurn) return
         between.addLast(level)

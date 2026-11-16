@@ -1,0 +1,6 @@
+{
+  "about": "A door slam, loud and short with no speech in it, opens no turn when a speech detector is given (on levels alone 0.15 s above the margin opens one).",
+  "speech": true,
+  "steps": [{"noise": 0.15, "level": -10, "p": 0.05}, {"quiet": 2.0}, {"noise": 0.2, "level": -12, "p": 0.1}],
+  "expect": {"turns": 0}
+}

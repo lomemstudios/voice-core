@@ -1,0 +1,6 @@
+{
+  "about": "Two coughs, loud for a third of a second, that the speech detector scores low open no turn.",
+  "speech": true,
+  "steps": [{"noise": 0.4, "level": -15, "p": 0.2}, {"quiet": 1.0}, {"noise": 0.3, "level": -15, "p": 0.35}],
+  "expect": {"turns": 0}
+}

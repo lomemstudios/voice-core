@@ -1,0 +1,6 @@
+{
+  "about": "Speech the detector is unsure of (0.6) over a playing answer opens a turn but raises no barge-in from sound: that needs 0.8.",
+  "speech": true,
+  "steps": [{"playing": true}, {"user": 0.8, "p": 0.6}, {"quiet": 1.0}],
+  "expect": {"turns": 1, "bargeIn": "none"}
+}

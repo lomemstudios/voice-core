@@ -1,0 +1,6 @@
+{
+  "about": "\"Wait wait\" over a playing answer: confident speech for 0.3 s raises a barge-in from sound before any words arrive.",
+  "speech": true,
+  "steps": [{"playing": true}, {"user": 0.6, "p": 0.95}, {"say": "wait wait"}, {"quiet": 1.0}],
+  "expect": {"turns": 1, "bargeIn": "sound", "bargeInWithin": 0.35}
+}

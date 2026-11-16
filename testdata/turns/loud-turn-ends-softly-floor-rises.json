@@ -1,0 +1,5 @@
+{
+  "about": "Today's rule, pinned (0.4.0): six seconds of dense loud speech lift the noise floor, so the soft last words at -38 dB count as silence and the turn ends while they are still being said.",
+  "steps": [{"user": 1.0, "gapEvery": 6}, {"say": "first"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of the"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of the long"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of the long thought"}, {"user": 1.5, "level": -38}, {"say": "first part of the long thought then the rest"}],
+  "expect": {"text": "first part of the long thought", "endedBy": "silence", "endsWithin": -0.5}
+}

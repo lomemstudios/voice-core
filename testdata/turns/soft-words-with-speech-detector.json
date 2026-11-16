@@ -1,0 +1,6 @@
+{
+  "about": "Soft words under the margin, which the speech detector calls speech, keep the turn open: its silence is real silence.",
+  "speech": true,
+  "steps": [{"user": 2.0}, {"say": "check the build"}, {"user": 1.5, "level": -52}, {"say": "check the build and the tests"}],
+  "expect": {"text": "check the build and the tests", "cause": "SILENCE", "endsAfter": 0.6, "endsWithin": 1.5, "speechEndWithin": 0.05}
+}

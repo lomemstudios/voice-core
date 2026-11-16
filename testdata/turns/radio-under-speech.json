@@ -1,0 +1,6 @@
+{
+  "about": "A car radio talks under the user, before and after them, with no recognizer: the radio opens no turn, and after the user stops it would hold the turn open as speech, so the fallback ends it 0.7 + 3 s after the user's own voice.",
+  "speech": true,
+  "steps": [{"noise": 5.0, "level": -45, "p": 0.8}, {"user": 2.0, "p": 0.95}, {"noise": 20.0, "level": -45, "p": 0.8}],
+  "expect": {"turns": 1, "dropped": true, "cause": "FALLBACK", "endsAfter": 3.6, "endsWithin": 3.8, "speechEndWithin": 0.05}
+}

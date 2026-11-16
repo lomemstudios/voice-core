@@ -1,0 +1,6 @@
+{
+  "about": "The same turn with freezeFloorInTurn: the floor does not rise while the turn is open, so the soft last words are speech and the turn ends after them.",
+  "config": {"freezeFloorInTurn": true},
+  "steps": [{"user": 1.0, "gapEvery": 6}, {"say": "first"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of the"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of the long"}, {"user": 1.0, "gapEvery": 6}, {"say": "first part of the long thought"}, {"user": 1.5, "level": -38}, {"say": "first part of the long thought then the rest"}],
+  "expect": {"text": "first part of the long thought then the rest", "endedBy": "silence", "endsAfter": 0.5, "endsWithin": 1.5}
+}

@@ -1,0 +1,6 @@
+{
+  "about": "A radio above the margin but 18 dB under the user's voice talks on after them: it is not their own voice, so the fallback ends the turn.",
+  "speech": true,
+  "steps": [{"user": 2.0, "p": 0.95}, {"noise": 20.0, "level": -38, "p": 0.8}],
+  "expect": {"dropped": true, "cause": "FALLBACK", "endsAfter": 3.6, "endsWithin": 3.8, "speechEndWithin": 0.05}
+}
