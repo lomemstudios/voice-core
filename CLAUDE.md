@@ -23,13 +23,16 @@ and the decisions taken.
 ## What each module owns
 
 - `core` (`com.lomemstudios.voice`, Kotlin on Android, no third-party runtime):
-  - `turn`: `TurnDetector`, `TurnConfig`, `TurnEvent`, `TurnStats`, `Words`. When a turn starts and ends, from levels
-    and the recognizer's words.
+  - `turn`: `TurnDetector`, `TurnConfig`, `TurnEvent`, `TurnStats`, `Words`, and since 0.4.0 `SpeechProbability` (the
+    app's speech detector, injected) and `EndCause`. When a turn starts and ends, from levels and the recognizer's
+    words, or from the speech detector's probabilities when one is given.
   - `call`: `CallRoute` (which communication device a session uses; never the earpiece), `EchoMeter` (how far over the
     floor an answer came back while it played), `MicKind` (phone, earbuds, car, wired, other: the kind of a turn's
     microphone, from its AudioDeviceInfo type and the app's word on whether a Bluetooth device is a car).
-  - `engine`: `VoiceEngine` (the microphone, the call path and the frame fan-out; see below), `audio`: `FrameFanOut`,
-    `call`: `RouteSteps` and `CallPlayer` (what plays is call audio on the call path).
+  - `engine`: `VoiceEngine` (the microphone, the call path and the frame fan-out; see below) and since 0.4.0
+    `MicHealth`, `MicWatch` and `Backoff` (the microphone's health and the waits before it is opened again); `audio`:
+    `FrameFanOut` and `PreRoll` (0.4.0, the last seconds of audio before a turn opens); `call`: `RouteSteps` and
+    `CallPlayer` (what plays is call audio on the call path).
 - Removed in 0.3.0 (Petros, 28 October: "Testing is done, please remove the model"): the voice print (`print`:
   `VoicePrint`, `SpeakerCheck`, `WordVoice`, `IslandCutter`), the voice gate (`pvad`, `gate`, the detector's gate
   inputs), enrolment (`enrol`), the voice profile (`profile`), the model store (`models`), the engine factory
@@ -42,6 +45,12 @@ and the decisions taken.
   `AudioRecord` or switches the audio mode itself. It reads 50 ms frames on its "audio" thread, gives each to every
   tap (its own thread and bounded queue; a slow tap drops its own frames) and, with its level, to the listener on the
   main thread.
+- The recorder recovers by itself (0.4.0): an `AudioRecord` that will not open (an exception or not
+  `STATE_INITIALIZED`) or start, or whose read returns an error, is reported through `onMicHealth` (`Dead`, `Taken`),
+  never thrown, and opened again after a wait that doubles from 0.5 s to 8 s and starts over at the first sound
+  (`Healthy`). Exact zeros are reported as `Blank(ms)` and never reopened by the engine: they are also the platform's
+  own silence, which only the app can explain. Only the audio thread releases its recorder, after its last read; the
+  thread runs at `THREAD_PRIORITY_URGENT_AUDIO`.
 - `setMode(MODE_IN_COMMUNICATION)` needs `MODIFY_AUDIO_SETTINGS`, a normal permission granted at install with no
   prompt. `core`'s own manifest declares it (0.2.2, 21 October), so every app that uses `VoiceEngine` gets it through
   the manifest merge. Before 0.2.2 no manifest declared it and Android refused the mode with only a logcat warning
@@ -73,6 +82,17 @@ and the decisions taken.
 - A check that guards a fix must fail with the fix removed: paste both runs. The timeline in `TurnDetectorTest` has a
   recognizer `lag`, because one that answers at once hides timing bugs.
 - The scenarios Claude Voice and the Lo Mem apps rely on go into `testdata/turns/*.json` (`TurnScenarioTest`).
+- The speech detector (0.4.0) is a second path, taken only when the app sets `TurnDetector.speech` and gives its
+  frames (`audio(frame, levelDB, duration, t)`). Without it the energy rules run exactly as in 0.3.1, and that path is
+  what the Swift `TurnCore` matches: the speech path, the fallback, the sound barge-in and the pre-roll are not ported,
+  because the Swift side has no speech detector (decision of 16 November, PROGRESS.md). `freezeFloorInTurn` and the
+  end cause are energy-path additions behind a default-off flag and outside equality; port them when the Swift side
+  needs them. voice-core gains no model or runtime for this: the app brings its own (lomem: Silero through
+  sherpa-onnx).
+- The new fields of `TurnEvent.Ended`, `Dropped` and `BargeIn` (0.4.0: `speechEndAt`, `cause`, `bySound`,
+  `speechFrom`) are body properties, outside `equals`, `copy` and the constructors, and the sound barge-in is a
+  `BargeIn` with `bySound`, not a new event type: a consumer's `when` over the sealed `TurnEvent` would no longer
+  compile with a new subclass.
 - The detector has no voice gate since 0.3.0: it never tells voices apart, and another voice's sound and words hold a
   turn open as the user's do (`talker-after-user.json`). Claude Voice filters another person's stray words with the
   server's judgement of the words, not by audio.

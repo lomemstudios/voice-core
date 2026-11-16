@@ -1,4 +1,122 @@
-# voice-core progress: Phase 0 extracted the pure logic, and Claude Voice builds against it
+# voice-core progress: 0.4.0 adds a speech detector, a microphone that recovers and the detector's end cause
+
+## Summary of 0.4.0 (16 November 2026, job voicecore-1-vad)
+
+RELEASE_LINE
+
+voice-core 0.4.0 only adds. An app that uses none of the new parts builds and behaves as with 0.3.1. lomem's
+voice-native, copied outside lomem, compiles against 0.4.0 unchanged, and its 91 JVM tests pass with 0.3.1 and with
+0.4.0.
+
+What it adds:
+
+1. A pluggable speech detector: `SpeechProbability`, given to `TurnDetector` (`speech`) with each frame
+   (`audio(frame, levelDB, duration, t)`). A turn starts on 0.25 s of speech at 0.5 or more, above half the margin. Its
+   silence counts non-speech frames. The fallback, from sound alone, ends a turn once the person's own voice has been
+   gone for its silence plus 3 s (`FALLBACK`), so a radio under the user cannot hold it to `maxTurn`.
+2. `VoiceEngine` hardening: open and start failures are reported, never thrown; a read error reopens the recorder
+   after 0.5 s doubling to 8 s; the audio thread runs at urgent-audio priority; `audioGeneration` is `@Volatile`; only
+   the audio thread releases its recorder, after its last read.
+3. Microphone health: `MicHealth.Healthy`, `Blank(ms)`, `Dead(why)`, `Taken(why)` through
+   `VoiceEngineListener.onMicHealth` (a default method, so existing listeners compile). `Taken` also comes from
+   Android silencing the recording (Android 10 and later).
+4. The end cause: `speechEndAt` and `cause` (`SILENCE`, `STILL_WORDS`, `FALLBACK`, `MAX_TURN`, `FLUSH`, `NOISE`) on every
+   `Ended` and `Dropped`.
+5. A pre-roll: `TurnDetector.preRoll()` and `preRollFrom`, the last 2.5 s (`preRollSeconds`) of the frames given.
+6. `freezeFloorInTurn` (default off): the floor does not rise while a turn is open.
+7. Barge-in from sound: with a speech detector and `playing`, 0.3 s at 0.8 or more raises `BargeIn` with `bySound`.
+
+Nothing waits on an event, and nothing needs Petros.
+
+## Tests
+
+`./gradlew test assembleRelease` passes: 81 tests, none failing. The new ones:
+
+| Class | Tests | What |
+|---|---|---|
+| `TurnScenarioTest` | 1 (13 scenarios, 9 new) | door slam, coughs, "wait wait" over playback, unsure speech over playback, soft words, radio under speech, radio starting with speech, a loud turn that ends softly with the floor rising and frozen |
+| `TurnSpeechTest` | 13 | frames without a speech detector change nothing (same events, stats and floor as levels alone), pre-roll, every end cause with its `speechEndAt`, speech start, sound barge-in, field equality |
+| `MicHealthTest` | 6 | `MicWatch`, `Backoff`, `allZero` |
+
+The scenario runner now reports every failing scenario, one line each. Runs of `TurnScenarioTest` alone:
+
+Before any 0.4.0 logic, with only the new config fields in place. `loud-turn-ends-softly-floor-rises.json` already
+passes: it pins today's rule, and so confirms the hypothesis that the floor rises in long loud speech until the soft
+last words count as silence. `unsure-speech-over-playback.json` also passes before, because it only checks that no
+barge-in from sound comes.
+
+```
+TurnScenarioTest tests 1 failures 1 errors 0
+cough-with-speech-detector.json: turns started expected:<0> but was:<2>
+door-slam-with-speech-detector.json: turns started expected:<0> but was:<2>
+loud-turn-ends-softly-floor-frozen.json expected:<... of the long thought[ then the rest]> but was:<... of the long thought[]>
+radio-starts-with-speech.json: cause expected:<FALLBACK> but was:<null>
+radio-under-speech.json: turns started expected:<1> but was:<2>
+soft-words-with-speech-detector.json expected:<check the build[ and the tests]> but was:<check the build[]>
+wait-wait-over-playback.json: first barge-in expected:<[sound]> but was:<[words]>
+```
+
+After the floor freeze (`loud-turn-ends-softly-floor-frozen.json` passes):
+
+```
+TurnScenarioTest tests 1 failures 1 errors 0
+cough-with-speech-detector.json: turns started expected:<0> but was:<2>
+door-slam-with-speech-detector.json: turns started expected:<0> but was:<2>
+radio-starts-with-speech.json: cause expected:<FALLBACK> but was:<null>
+radio-under-speech.json: turns started expected:<1> but was:<2>
+soft-words-with-speech-detector.json expected:<check the build[ and the tests]> but was:<check the build[]>
+wait-wait-over-playback.json: first barge-in expected:<[sound]> but was:<[words]>
+```
+
+After the speech path without the fallback: the radio holds both turns for its whole 20 s, and they end only when it
+stops:
+
+```
+TurnScenarioTest tests 1 failures 1 errors 0
+radio-starts-with-speech.json: cause expected:<[FALLBACK]> but was:<[SILENCE]>
+radio-under-speech.json: cause expected:<[FALLBACK]> but was:<[SILENCE]>
+```
+
+After the fallback:
+
+```
+TurnScenarioTest tests 1 failures 0 errors 0
+```
+
+lomem's voice-native JVM tests (`packages/voice-native/android/jvm-tests/run.sh`, from a `git archive` copy in a temp
+folder, with `voice-core.gradle` pointed at this build's local Maven folder for 0.4.0): 91 tests, 0 failed, with 0.3.1
+and with 0.4.0.
+
+The engine's AudioRecord paths have no device test: no device is plugged into main. They compile, and their decisions
+(`MicWatch`, `Backoff`) are unit-tested. The first phone run of an app on 0.4.0 shows them in its log
+(`microphone: …` lines).
+
+## Decisions made without Petros
+
+None needed a panel: the prompt and the repository settle each.
+
+- The sound barge-in is `TurnEvent.BargeIn` with `bySound = true`, not a new event type. The prompt asks for "a new
+  optional event", and also that every consumer builds unchanged. A new subclass of the sealed `TurnEvent` breaks
+  lomem's `VoiceService`, whose `when` lists every subclass. The build rule wins.
+- The new event fields (`speechEndAt`, `cause`, `bySound`, `speechFrom`) are body properties, outside `equals` and
+  `copy`. As constructor parameters they would change equality: `TurnDetectorTest` compares a `Dropped` by value, and
+  so may a consumer.
+- With a speech detector, a turn's start also needs sound above half the margin, and the sound barge-in too. Without
+  it, a radio under the floor opens a turn every few seconds, and the answer leaking faintly past the echo canceller
+  cuts itself.
+- With a speech detector, the "held by noise" rule (4 s of sound with no words) is off. Claude Voice is to run no
+  recognizer, so every turn would have no words and be dropped at 4 s.
+- The cause for `finish()` is `FLUSH`, the prompt's word.
+- The Swift `TurnCore` gets no port in this job: the default path is unchanged, so parity holds. The speech path needs a
+  speech detector the Swift side does not have. CLAUDE.md says so.
+- Claude Voice's `FerryAudioTest` was not run: the claude-voice repository is no longer checked out on main or the Mac,
+  and Claude Voice's Android code now lives in lomem's voice-native. That module's 91 JVM tests ran instead, above.
+
+## Needs Petros
+
+Nothing.
+
+## Earlier: Phase 0 extracted the pure logic, and Claude Voice builds against it
 
 The steps are claude-voice's `docs/voice-gate-plan.md`, Phase 0.
 
@@ -50,7 +168,7 @@ What moved from claude-voice's `android/app` (code unchanged; packages and comme
   resolve then.
 - The release zip leaves out `maven-metadata.xml`, which carries the build time, so the same tree gives the same zip.
 
-## Needs Petros
+### Needed Petros on 19 October (done since: the repository exists, v0.1.0 to v0.3.1 are released)
 
 - Create the GitHub repository (public, plan answer Q2), push `main`, and say where it lives. Then: tag `v0.1.0`,
   `tools/release.sh`, `gh release create`, and pin `voice_core_repo` and `voice_core_sha256` in claude-voice's
