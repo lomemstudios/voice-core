@@ -2,7 +2,12 @@
 
 ## Summary of 0.4.0 (16 November 2026, job voicecore-1-vad)
 
-RELEASE_LINE
+RELEASED: voice-core 0.4.0 sha256 46cf8f9d364c32250ef64386abfc99974c514d6a089ef9503e2047eecaf58d71
+
+It is on GitHub as `v0.4.0` (https://github.com/lomemstudios/voice-core/releases/tag/v0.4.0) with
+`voice-core-0.4.0-maven.zip`. Two builds of the tree gave the same SHA-256, and so did the zip downloaded back from
+the release. To pin it, lomem's `packages/voice-native/android/voice-core.gradle` needs `voiceCoreVersion = "0.4.0"`
+and the SHA-256 above. lomem's plan `voicegen` does that in its own job.
 
 voice-core 0.4.0 only adds. An app that uses none of the new parts builds and behaves as with 0.3.1. lomem's
 voice-native, copied outside lomem, compiles against 0.4.0 unchanged, and its 91 JVM tests pass with 0.3.1 and with
