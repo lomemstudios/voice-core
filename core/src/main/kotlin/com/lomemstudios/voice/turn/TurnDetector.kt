@@ -304,8 +304,9 @@ class TurnDetector(val config: TurnConfig = TurnConfig()) {
             flushed = false
         }
         if (inTurn && voiced) ownVoice(level, t)
-        // Barge-in from sound: confident speech while an answer plays, once a turn.
-        if (p >= config.bargeInProbability) {
+        // Barge-in from sound: confident speech while an answer plays, once a turn. Above half the margin too, so the
+        // answer's own voice leaking faintly past the echo canceller does not cut it.
+        if (p >= config.bargeInProbability && voiced) {
             if (confidentSince == null) confidentSince = t - duration
             val since = confidentSince!!
             if (playing && !soundBargedIn && t - since >= config.bargeInSpeech - 1e-9) {

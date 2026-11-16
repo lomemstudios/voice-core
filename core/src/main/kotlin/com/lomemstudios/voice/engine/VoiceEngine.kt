@@ -15,6 +15,10 @@
 // The microphone is read 50 ms at a time on the "audio" thread. Each frame goes to every tap (FrameFanOut: the
 // recognizer pipe and any other consumer, each on its own thread with its own bounded queue) and, with its level, to
 // the listener on the main thread, where the app's turn detector runs.
+//
+// The recorder recovers by itself (0.4.0): one that will not open or start, or fails while reading, is reported
+// (MicHealth, through onMicHealth, never thrown) and opened again after a wait that doubles from 0.5 s to 8 s. Only the
+// audio thread releases its recorder, after its last read, so stopping never frees a recorder inside read().
 
 package com.lomemstudios.voice.engine
 
@@ -29,8 +33,12 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
+import android.media.AudioRecordingConfiguration
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
+import android.os.SystemClock
 import com.lomemstudios.voice.audio.FrameFanOut
 import com.lomemstudios.voice.call.AudioOut
 import com.lomemstudios.voice.call.CallPlayer
@@ -49,6 +57,8 @@ interface VoiceEngineListener {
     /** A new route was applied, before the recording restarts for it. */
     fun onRoute(route: Route)
     fun onLog(line: String)
+    /** The microphone's health changed (0.4.0): see [MicHealth]. */
+    fun onMicHealth(health: MicHealth) {}
 }
 
 class VoiceEngine(
@@ -77,8 +87,14 @@ class VoiceEngine(
     @Volatile private var running = false
     private var record: AudioRecord? = null
     private var audioThread: Thread? = null
-    private var audioGeneration = 0
+    /** Read by the audio thread, changed on the main thread: each recording has its own number. */
+    @Volatile private var audioGeneration = 0
     private val fanOut = FrameFanOut()
+    private val micWatch = MicWatch()
+    private val backoff = Backoff()
+
+    /** The microphone's health as last reported; null before the first report. */
+    val micHealth: MicHealth? get() = micWatch.state
 
     /** The route in use; null before the first choice. */
     var route: Route? = null
@@ -90,7 +106,7 @@ class VoiceEngine(
     private var ns: NoiseSuppressor? = null
 
     /** The platform's echo canceller is attached and on. */
-    val echoCancellerOn: Boolean get() = aec?.enabled == true
+    val echoCancellerOn: Boolean get() = runCatching { aec?.enabled == true }.getOrDefault(false)
 
     /** The microphone the recording really comes from, as the platform routed it; null with no recording. */
     val inputDevice: AudioDeviceInfo? get() = runCatching { record?.routedDevice }.getOrNull()
@@ -113,7 +129,8 @@ class VoiceEngine(
         audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id == out.id }
     }
 
-    /** Opens the session's audio: follows devices, chooses the route and starts the microphone. Main thread. */
+    /** Opens the session's audio: follows devices, chooses the route and starts the microphone. Main thread. A
+     *  microphone that will not open is reported through [VoiceEngineListener.onMicHealth], never thrown. */
     fun start() {
         running = true
         callbacks.add()
@@ -191,10 +208,10 @@ class VoiceEngine(
         if (!running || !expected.sameAs(route)) return
         val out = expected.device ?: run {
             val to = expected.output?.let { ", answers to type ${it.type}" } ?: ""
-            log("recording from ${record?.routedDevice?.productName ?: "unknown"} (type ${record?.routedDevice?.type ?: -1}, media path$to)")
+            log("recording from ${inputDevice?.productName ?: "unknown"} (type ${inputDevice?.type ?: -1}, media path$to)")
             return
         }
-        val routed = record?.routedDevice
+        val routed = inputDevice
         val want = CallRoute.expectedInput(out)
         val playing = audioManager.communicationDevice
         when (RouteSteps.micCheck(routed?.type, want, routeAttempts)) {
@@ -244,12 +261,52 @@ class VoiceEngine(
         adds = {
             audioManager.registerAudioDeviceCallback(deviceCallback, main)
             audioManager.addOnCommunicationDeviceChangedListener(mainExecutor, communicationListener)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) audioManager.registerAudioRecordingCallback(recordingCallback, main)
         },
         removes = {
             audioManager.unregisterAudioDeviceCallback(deviceCallback)
             audioManager.removeOnCommunicationDeviceChangedListener(communicationListener)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) audioManager.unregisterAudioRecordingCallback(recordingCallback)
         },
     )
+
+    /** Android silences a recording while another app with priority records (Android 10 and later): Taken. It gives
+     *  zeros meanwhile and sound again by itself when the other app lets go, which reports Healthy. */
+    private val recordingCallback = object : AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+            val session = runCatching { record?.audioSessionId }.getOrNull() ?: return
+            val ours = configs.firstOrNull { it.clientAudioSessionId == session } ?: return
+            if (ours.isClientSilenced) health(micWatch.taken("Android silenced the recording: another app records"))
+        }
+    }
+
+    /** Reports a health change to the app, and logs it. Main thread. */
+    private fun health(change: MicHealth?) {
+        change ?: return
+        if (change == MicHealth.Healthy) backoff.reset()
+        if (change !is MicHealth.Blank) log("microphone: ${describe(change)}")
+        listener.onMicHealth(change)
+    }
+
+    private fun describe(h: MicHealth) = when (h) {
+        MicHealth.Healthy -> "sound"
+        is MicHealth.Blank -> "only zeros for ${h.ms} ms"
+        is MicHealth.Dead -> "dead, ${h.why}"
+        is MicHealth.Taken -> "taken, ${h.why}"
+    }
+
+    /** The recorder failed: report it and open it again after the next wait, unless the recording changed meanwhile. */
+    private fun micFailed(change: MicHealth?, line: String) {
+        log(line)
+        health(change)
+        val generation = audioGeneration
+        val wait = backoff.next()
+        log("opening the microphone again in $wait ms")
+        main.postDelayed({
+            if (running && generation == audioGeneration && record == null) startAudio()
+        }, wait)
+    }
 
     private fun takeBack() {
         val out = route?.device ?: return
@@ -269,7 +326,15 @@ class VoiceEngine(
         // The call microphone follows the communication device and carries the platform's echo canceller; the
         // recognition microphone is the old media path.
         val source = if (call) MediaRecorder.AudioSource.VOICE_COMMUNICATION else MediaRecorder.AudioSource.VOICE_RECOGNITION
-        val rec = AudioRecord(source, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(min, CHUNK * 2 * 8))
+        val rec = try {
+            AudioRecord(source, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, max(min, CHUNK * 2 * 8))
+        } catch (e: Exception) { // no permission, a bad argument on an odd phone
+            return micFailed(micWatch.dead("could not open: $e"), "could not open the microphone: $e")
+        }
+        if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            rec.release()
+            return micFailed(micWatch.dead("not initialized"), "the microphone would not initialize")
+        }
         attachEffects(rec)
         route?.device?.let { out ->
             val want = CallRoute.expectedInput(out)
@@ -280,20 +345,67 @@ class VoiceEngine(
         // On a media output the microphone is this phone's own, never a wired headset's.
         if (route?.output != null) audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
             .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }?.let { rec.setPreferredDevice(it) }
+        val effects = listOfNotNull(aec, ns)
+        val started = try {
+            rec.startRecording()
+            null
+        } catch (e: Exception) {
+            e
+        }
+        if (started != null || rec.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            release(rec, effects)
+            aec = null
+            ns = null
+            return if (started != null) micFailed(micWatch.dead("could not start: $started"), "the microphone would not start: $started")
+            else micFailed(micWatch.taken("would not start: another app holds it"), "the microphone would not start: another app holds it")
+        }
         record = rec
-        rec.startRecording()
         val generation = ++audioGeneration
         audioThread = Thread {
+            Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
             val buf = ShortArray(CHUNK)
-            while (running && generation == audioGeneration) {
-                val n = rec.read(buf, 0, CHUNK)
-                if (n <= 0) continue
-                val chunk = buf.copyOf(n)
-                fanOut.offer(chunk) // each tap drops when its consumer falls behind
-                val level = levelDB(chunk)
-                main.post { listener.onFrame(chunk, level) }
+            try {
+                while (running && generation == audioGeneration) {
+                    val n = rec.read(buf, 0, CHUNK)
+                    if (n < 0) {
+                        // A dead recorder returns its error at once, every time: stop reading and open a new one.
+                        main.post { readFailed(generation, n) }
+                        break
+                    }
+                    if (n == 0) {
+                        SystemClock.sleep(5)
+                        continue
+                    }
+                    val chunk = buf.copyOf(n)
+                    fanOut.offer(chunk) // each tap drops when its consumer falls behind
+                    val level = levelDB(chunk)
+                    val zeros = allZero(chunk)
+                    val ms = n * 1000L / RATE
+                    main.post {
+                        listener.onFrame(chunk, level)
+                        if (generation == audioGeneration) health(micWatch.frame(zeros, ms))
+                    }
+                }
+            } finally {
+                // Only this thread releases its recorder, after its last read.
+                release(rec, effects)
             }
         }.apply { name = "audio"; start() }
+    }
+
+    /** A read failed with [code] in recording [generation]: its thread has stopped and released the recorder. */
+    private fun readFailed(generation: Int, code: Int) {
+        if (!running || generation != audioGeneration) return
+        record = null
+        aec = null
+        ns = null
+        micFailed(micWatch.dead("read error $code"), "the microphone failed while reading (error $code)")
+    }
+
+    private fun release(rec: AudioRecord, effects: List<android.media.audiofx.AudioEffect>) {
+        for (e in effects) runCatching { e.release() }
+        runCatching { rec.stop() }
+        runCatching { rec.release() }
     }
 
     /** The phone's echo canceller and noise suppressor on the recording, where the phone has them; logged each time,
@@ -313,17 +425,16 @@ class VoiceEngine(
             "noise suppressor ${state(nsAvailable, ns?.enabled)}")
     }
 
+    /** Ends the recording. Its thread leaves its loop at the next read and releases the recorder and its effects
+     *  itself, so a recorder is never released while a read is inside it. */
     private fun stopAudio() {
         audioGeneration++
         val rec = record ?: return
         record = null
-        rec.stop() // ends a blocked read
-        audioThread?.join(500)
-        aec?.release()
-        ns?.release()
         aec = null
         ns = null
-        rec.release()
+        runCatching { rec.stop() } // ends a blocked read
+        audioThread?.join(500)
     }
 }
 

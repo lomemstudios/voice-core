@@ -169,6 +169,14 @@ class TurnSpeechTest {
         assertEquals(1, f.events.count { it is TurnEvent.BargeIn })
     }
 
+    @Test fun faintConfidentSpeechWhilePlayingIsNoBargeIn() {
+        // The answer's own voice, faint after the echo canceller, scores high but stays under half the margin.
+        val f = speechFeed()
+        f.d.playing = true
+        f.run(1.0, -56f, 0.95f)
+        assertTrue(f.events.none { it is TurnEvent.BargeIn })
+    }
+
     @Test fun wordBargeInIsNotBySound() {
         val f = Feed(TurnDetector(), frames = false)
         f.run(1.0, -60f)
